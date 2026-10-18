@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Menus de la semaine – Mon App Cuisine</title>
+  <link rel="stylesheet" href="cuisine.css">
+  <style>
+    .meal { margin-top: 20px; }
+    .meal h3 { font-size: 1.1rem; margin-bottom: 8px; }
+    .slots { list-style: none; display: grid; gap: 8px; }
+    .slot {
+      display: grid; grid-template-columns: 28px 1fr auto auto; gap: 10px; align-items: center;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    }
+    .slot .num { color: var(--muted); font-weight: 700; text-align: center; }
+    .slot .name {
+      background: none; border: none; padding: 0; font: inherit; font-weight: 600; color: var(--text);
+      text-align: left; cursor: pointer;
+    }
+    .slot .name:hover { color: var(--accent); }
+    .slot .serv { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--muted); }
+    .slot .serv input { width: 64px; padding: 6px 8px; }
+    @media (max-width: 560px) {
+      .slot { grid-template-columns: 24px 1fr auto; }
+      .slot .serv { grid-column: 2; }
+    }
+    #available { margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <nav class="pages" aria-label="Pages cuisine">
+    <div class="container">
+      <a href="index.html">🍳 Accueil</a>
+      <a href="recettes.html">Enregistrer</a>
+      <a href="menus.html" aria-current="page">Menus de la semaine</a>
+      <a href="catalogue.html">Toutes mes recettes</a>
+      <a href="historique.html">Historique</a>
+    </div>
+  </nav>
+
+  <header class="container">
+    <h1>Mes menus de la <span>semaine</span></h1>
+    <p>Compose le menu de la semaine à venir à partir de tes recettes enregistrées.</p>
+  </header>
+
+  <main class="container">
+    <section>
+      <h2>Paramètres</h2>
+      <div class="panel">
+        <form id="params">
+          <div class="row">
+            <label>Semaine du
+              <input type="date" name="week" required>
+            </label>
+            <label>Saison
+              <select name="season"></select>
+            </label>
+          </div>
+          <div class="row">
+            <label>Recettes pour le midi
+              <input type="number" name="midi" min="0" max="14" value="5" required>
+            </label>
+            <label>Portions par recette (midi)
+              <input type="number" name="servMidi" min="1" max="50" value="2" required>
+            </label>
+            <label>Recettes pour le soir
+              <input type="number" name="soir" min="0" max="14" value="7" required>
+            </label>
+            <label>Portions par recette (soir)
+              <input type="number" name="servSoir" min="1" max="50" value="2" required>
+            </label>
+          </div>
+          <fieldset>
+            <legend>Catégories à utiliser</legend>
+            <div class="checks" id="categories"></div>
+          </fieldset>
+          <p class="meta" id="available"></p>
+          <div class="actions">
+            <button type="submit" class="btn primary">Générer le menu</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="result-section" hidden>
+      <h2 id="result-title">Menu</h2>
+      <div id="notice"></div>
+      <div class="panel" id="result-panel">
+        <div id="result"></div>
+        <p class="meta" id="totals" style="margin-top: 16px;"></p>
+        <div class="actions" style="margin-top: 16px;">
+          <button class="btn" id="regenerate">Tout régénérer</button>
+          <button class="btn primary" id="validate">Valider ce menu</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">Mon App Cuisine — Fait avec ❤️ et un peu de beurre.</div>
+  </footer>
+
+  <dialog id="view">
+    <div class="detail" id="detail"></div>
+    <div class="actions">
+      <button class="btn primary" id="close">Fermer</button>
+    </div>
+  </dialog>
+
+  <script src="cuisine.js"></script>
+  <script>
+    const { el } = Cuisine;
+    const $ = id => document.getElementById(id);
+    const form = $('params');
+    const f = form.elements;
+    let draft = null; // { weekStart, season, categories, items: [{ meal, recipeId, servings }] }
+
+    // --- Paramètres ---
+    Cuisine.SEASONS.forEach(s => f.season.append(el('option', { value: s, textContent: s })));
+    const catBoxes = Cuisine.CATEGORIES.map(c => {
+      const box = el('input', { type: 'checkbox', value: c, checked: c === 'Plat' });
+      $('categories').append(el('label', {}, [box, c]));
+      return box;
+    });
+    f.week.value = Cuisine.isoDate(Cuisine.nextMonday());
+    f.season.value = Cuisine.seasonOf(Cuisine.nextMonday());
+    f.week.addEventListener('change', () => {
+      if (f.week.value) f.season.value = Cuisine.seasonOf(Cuisine.parseIsoDate(f.week.value));
+      updateAvailable();
+    });
+
+    function selectedCategories() {
+      return catBoxes.filter(b => b.checked).map(b => b.value);
+    }
+
+    function poolFor(season, categories) {
+      return Cuisine.getRecipes().filter(r => categories.includes(r.category) && Cuisine.fitsSeason(r, season));
+    }
+
+    function updateAvailable() {
+      const recipes = Cuisine.getRecipes();
+      const n = poolFor(f.season.value, selectedCategories()).length;
+      const p = $('available');
+      if (!recipes.length) {
+        p.replaceChildren('Tu n\'as encore aucune recette. ', el('a', { href: 'recettes.html', textContent: 'Enregistre tes premières recettes' }), ' pour pouvoir créer un menu.');
+      } else {
+        p.textContent = Cuisine.plural(n, 'recette') + ' de ta base correspond' + (n > 1 ? 'ent' : '') + ' à ces critères (sur ' + recipes.length + ').';
+      }
+    }
+    [f.season, ...catBoxes].forEach(c => c.addEventListener('change', updateAvailable));
+
+    // --- Tirage des recettes ---
+    function shuffle(list) {
+      const a = list.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    // Recettes des deux derniers menus validés : on les propose en dernier pour varier.
+    function recentIds() {
+      const last = Cuisine.getHistory().sort((a, b) => String(b.weekStart).localeCompare(String(a.weekStart))).slice(0, 2);
+      return new Set(last.flatMap(m => m.items.map(it => it.recipeId)));
+    }
+
+    function ordered(pool) {
+      const recent = recentIds();
+      return shuffle(pool).sort((a, b) => recent.has(a.id) - recent.has(b.id));
+    }
+
+    function generate() {
+      const season = f.season.value;
+      const categories = selectedCategories();
+      const pool = ordered(poolFor(season, categories));
+      const counts = { midi: Number(f.midi.value) || 0, soir: Number(f.soir.value) || 0 };
+      const servings = { midi: Number(f.servMidi.value) || 1, soir: Number(f.servSoir.value) || 1 };
+      const items = [];
+      let i = 0;
+      ['midi', 'soir'].forEach(meal => {
+        for (let k = 0; k < counts[meal] && pool.length; k++) {
+          items.push({ meal, recipeId: pool[i % pool.length].id, servings: servings[meal] });
+          i++;
+        }
+      });
+      draft = { weekStart: f.week.value, season, categories, items };
+      Cuisine.saveDraft(draft);
+      render();
+    }
+
+    function reroll(index) {
+      const pool = poolFor(draft.season, draft.categories);
+      const used = new Set(draft.items.map(it => it.recipeId));
+      const current = draft.items[index].recipeId;
+      let candidates = ordered(pool.filter(r => !used.has(r.id)));
+      if (!candidates.length) candidates = shuffle(pool.filter(r => r.id !== current));
+      if (!candidates.length) {
+        showNotice('warn', 'Aucune autre recette ne correspond aux critères pour remplacer celle-ci.');
+        return;
+      }
+      draft.items[index].recipeId = candidates[0].id;
+      Cuisine.saveDraft(draft);
+      render();
+    }
+
+    // --- Affichage ---
+    function showNotice(kind, ...children) {
+      $('notice').replaceChildren(el('p', { className: 'notice ' + kind, style: 'margin-bottom: 14px;' }, children));
+    }
+
+    function render() {
+      $('result-panel').hidden = !draft;
+      if (!draft) return;
+      $('result-section').hidden = false;
+      const recipes = new Map(Cuisine.getRecipes().map(r => [r.id, r]));
+      // Une recette supprimée entre-temps disparaît du brouillon.
+      draft.items = draft.items.filter(it => recipes.has(it.recipeId));
+      const week = Cuisine.parseIsoDate(draft.weekStart);
+      $('result-title').textContent = 'Menu de la semaine du ' + Cuisine.formatDate(week, { day: 'numeric', month: 'long', year: 'numeric' }) + ' · ' + draft.season;
+
+      const result = $('result');
+      result.replaceChildren();
+      $('notice').replaceChildren();
+      const ids = draft.items.map(it => it.recipeId);
+      const hasRepeats = new Set(ids).size < ids.length;
+      if (!draft.items.length) {
+        result.append(el('p', { className: 'empty' }, ['Aucune recette ne correspond à ces critères. Change la saison ou les catégories, ou ',
+          el('a', { href: 'recettes.html', textContent: 'enregistre de nouvelles recettes' }), '.']));
+      } else if (hasRepeats) {
+        showNotice('warn', 'Tu n\'as pas assez de recettes différentes pour ces critères : certaines reviennent plusieurs fois. Tu peux les remplacer avec « Changer ».');
+      }
+
+      Object.entries(Cuisine.MEALS).forEach(([meal, label]) => {
+        const entries = draft.items.map((it, index) => ({ it, index })).filter(x => x.it.meal === meal);
+        if (!entries.length) return;
+        const ul = el('ul', { className: 'slots' });
+        entries.forEach(({ it, index }, n) => {
+          const r = recipes.get(it.recipeId);
+          const name = el('button', { className: 'name', type: 'button', textContent: r.title });
+          name.addEventListener('click', () => {
+            $('detail').replaceChildren(...Cuisine.recipeDetail(r));
+            $('view').showModal();
+          });
+          const time = Cuisine.totalTime(r);
+          const serv = el('input', { type: 'number', min: 1, max: 50, value: it.servings, ariaLabel: 'Portions pour ' + r.title });
+          serv.addEventListener('change', () => {
+            it.servings = Math.max(1, Number(serv.value) || 1);
+            serv.value = it.servings;
+            Cuisine.saveDraft(draft);
+            renderTotals();
+          });
+          const change = el('button', { className: 'btn small', type: 'button', textContent: '↻ Changer' });
+          change.addEventListener('click', () => reroll(index));
+          ul.append(el('li', { className: 'slot' }, [
+            el('span', { className: 'num', textContent: n + 1 }),
+            el('div', {}, [name, el('div', { className: 'meta', textContent: [r.category, time ? time + ' min' : ''].filter(Boolean).join(' · ') })]),
+            el('label', { className: 'serv' }, [serv, 'portions']),
+            change
+          ]));
+        });
+        result.append(el('div', { className: 'meal' }, [el('h3', { textContent: label + ' · ' + Cuisine.plural(entries.length, 'recette') }), ul]));
+      });
+      $('validate').disabled = !draft.items.length;
+      renderTotals();
+    }
+
+    function renderTotals() {
+      const total = draft.items.reduce((s, it) => s + it.servings, 0);
+      $('totals').textContent = draft.items.length
+        ? Cuisine.plural(draft.items.length, 'recette') + ' · ' + Cuisine.plural(total, 'portion') + ' au total'
+        : '';
+    }
+
+    // --- Validation : le menu part dans l'historique ---
+    $('validate').addEventListener('click', () => {
+      if (!draft || !draft.items.length) return;
+      const recipes = new Map(Cuisine.getRecipes().map(r => [r.id, r]));
+      let history = Cuisine.getHistory();
+      const existing = history.find(m => m.weekStart === draft.weekStart);
+      if (existing && !confirm('Un menu est déjà validé pour cette semaine. Le remplacer par celui-ci ?')) return;
+      history = history.filter(m => m.weekStart !== draft.weekStart);
+      history.push({
+        id: Cuisine.newId(),
+        weekStart: draft.weekStart,
+        season: draft.season,
+        validatedAt: new Date().toISOString(),
+        items: draft.items.map(it => ({ meal: it.meal, recipeId: it.recipeId, title: recipes.get(it.recipeId).title, servings: it.servings }))
+      });
+      if (!Cuisine.saveHistory(history)) return;
+      Cuisine.saveDraft(null);
+      draft = null;
+      render();
+      $('result-title').textContent = 'Menu validé';
+      showNotice('ok', 'Menu validé ! ', el('a', { href: 'historique.html', textContent: 'Voir l\'historique' }));
+      $('result-section').scrollIntoView({ behavior: 'smooth' });
+    });
+
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      generate();
+      $('result-section').scrollIntoView({ behavior: 'smooth' });
+    });
+    $('regenerate').addEventListener('click', generate);
+    $('close').addEventListener('click', () => $('view').close());
+
+    // Reprendre le brouillon en cours s'il y en a un.
+    const saved = Cuisine.getDraft();
+    if (saved && Array.isArray(saved.items) && saved.weekStart) {
+      draft = saved;
+      f.week.value = draft.weekStart;
+      f.season.value = draft.season;
+      catBoxes.forEach(b => { b.checked = (draft.categories || []).includes(b.value); });
+      render();
+    }
+    updateAvailable();
+  </script>
+</body>
+</html>

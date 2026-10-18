@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enregistrer une recette – Mon App Cuisine</title>
+  <link rel="stylesheet" href="cuisine.css">
+</head>
+<body>
+  <nav class="pages" aria-label="Pages cuisine">
+    <div class="container">
+      <a href="index.html">🍳 Accueil</a>
+      <a href="recettes.html" aria-current="page">Enregistrer</a>
+      <a href="menus.html">Menus de la semaine</a>
+      <a href="catalogue.html">Toutes mes recettes</a>
+      <a href="historique.html">Historique</a>
+    </div>
+  </nav>
+
+  <header class="container">
+    <h1 id="page-title">Enregistrer une <span>recette</span></h1>
+    <p id="page-intro">Ajoute à ta base les recettes que tu as retenues.</p>
+  </header>
+
+  <main class="container">
+    <section>
+      <div id="notice"></div>
+      <div class="panel">
+        <form id="form">
+          <label>Nom de la recette
+            <input name="title" required maxlength="120">
+          </label>
+          <div class="row">
+            <label>Catégorie
+              <select name="category"></select>
+            </label>
+            <label>Portions
+              <input name="servings" type="number" min="1" max="100">
+            </label>
+            <label>Préparation <small>(min)</small>
+              <input name="prep" type="number" min="0" max="1440">
+            </label>
+            <label>Cuisson <small>(min)</small>
+              <input name="cook" type="number" min="0" max="1440">
+            </label>
+          </div>
+          <fieldset>
+            <legend>Saisons <small>— ne coche rien si la recette se fait toute l'année</small></legend>
+            <div class="checks" id="seasons"></div>
+          </fieldset>
+          <label>Ingrédients <small>un par ligne</small>
+            <textarea name="ingredients" placeholder="200 g de farine&#10;3 œufs&#10;50 cl de lait"></textarea>
+          </label>
+          <label>Étapes <small>une par ligne</small>
+            <textarea name="steps" placeholder="Mélanger la farine et les œufs.&#10;Ajouter le lait petit à petit."></textarea>
+          </label>
+          <label>Source <small>lien ou livre (facultatif)</small>
+            <input name="source" maxlength="300">
+          </label>
+          <label>Pourquoi je la garde / notes <small>(facultatif)</small>
+            <textarea name="notes" style="min-height: 70px;"></textarea>
+          </label>
+          <div class="actions">
+            <a class="btn" id="cancel" href="catalogue.html" hidden>Annuler</a>
+            <button type="submit" class="btn primary" id="submit">Enregistrer la recette</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="recent-section">
+      <h2>Dernières recettes ajoutées</h2>
+      <div class="grid" id="recent"></div>
+      <p class="meta" style="margin-top: 12px;"><a href="catalogue.html">Voir toutes mes recettes →</a></p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">Mon App Cuisine — Fait avec ❤️ et un peu de beurre.</div>
+  </footer>
+
+  <script src="cuisine.js"></script>
+  <script>
+    const { el } = Cuisine;
+    const form = document.getElementById('form');
+    const notice = document.getElementById('notice');
+    const fields = form.elements;
+    const editId = new URLSearchParams(location.search).get('id');
+
+    Cuisine.CATEGORIES.forEach(c => fields.category.append(el('option', { value: c, textContent: c })));
+    fields.category.value = 'Plat';
+    const seasonBoxes = Cuisine.SEASONS.map(s => {
+      const box = el('input', { type: 'checkbox', value: s });
+      document.getElementById('seasons').append(el('label', {}, [box, s]));
+      return box;
+    });
+
+    function showNotice(kind, children) {
+      notice.replaceChildren(el('p', { className: 'notice ' + kind }, children));
+      notice.style.marginBottom = '16px';
+    }
+
+    // Mode modification : catalogue.html renvoie ici avec ?id=...
+    const editing = editId ? Cuisine.getRecipes().find(r => r.id === editId) : null;
+    if (editId && !editing) {
+      showNotice('warn', ['Cette recette est introuvable. Tu peux en enregistrer une nouvelle.']);
+    }
+    if (editing) {
+      document.title = 'Modifier une recette – Mon App Cuisine';
+      document.getElementById('page-title').replaceChildren('Modifier la ', el('span', { textContent: 'recette' }));
+      document.getElementById('page-intro').textContent = editing.title;
+      document.getElementById('submit').textContent = 'Enregistrer les modifications';
+      document.getElementById('cancel').hidden = false;
+      document.getElementById('recent-section').hidden = true;
+      fields.title.value = editing.title;
+      fields.category.value = editing.category;
+      fields.servings.value = editing.servings;
+      fields.prep.value = editing.prep;
+      fields.cook.value = editing.cook;
+      seasonBoxes.forEach(b => { b.checked = editing.seasons.includes(b.value); });
+      fields.ingredients.value = editing.ingredients.join('\n');
+      fields.steps.value = editing.steps.join('\n');
+      fields.source.value = editing.source;
+      fields.notes.value = editing.notes;
+    }
+
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const data = Cuisine.cleanRecipe({
+        title: fields.title.value,
+        category: fields.category.value,
+        seasons: seasonBoxes.filter(b => b.checked).map(b => b.value),
+        servings: fields.servings.value,
+        prep: fields.prep.value,
+        cook: fields.cook.value,
+        ingredients: fields.ingredients.value,
+        steps: fields.steps.value,
+        source: fields.source.value.trim(),
+        notes: fields.notes.value.trim()
+      });
+      const recipes = Cuisine.getRecipes();
+      if (editing) {
+        const i = recipes.findIndex(r => r.id === editing.id);
+        recipes[i] = { ...data, id: editing.id, createdAt: editing.createdAt, updatedAt: new Date().toISOString() };
+        if (Cuisine.saveRecipes(recipes)) location.href = 'catalogue.html';
+        return;
+      }
+      const duplicate = recipes.some(r => Cuisine.normalize(r.title) === Cuisine.normalize(data.title));
+      if (duplicate && !confirm('Une recette « ' + data.title + ' » existe déjà. L\'enregistrer quand même ?')) return;
+      recipes.push(data);
+      if (!Cuisine.saveRecipes(recipes)) return;
+      showNotice('ok', ['« ' + data.title + ' » est enregistrée dans ta base. ', el('a', { href: 'catalogue.html', textContent: 'Voir toutes mes recettes' })]);
+      form.reset();
+      fields.category.value = 'Plat';
+      renderRecent();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+
+    function renderRecent() {
+      const recent = Cuisine.getRecipes()
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+        .slice(0, 6);
+      const box = document.getElementById('recent');
+      box.replaceChildren();
+      if (!recent.length) {
+        box.append(el('p', { className: 'empty', textContent: 'Aucune recette pour l\'instant. Remplis le formulaire ci-dessus pour commencer.' }));
+        return;
+      }
+      recent.forEach(r => box.append(el('div', { className: 'card' }, [
+        el('h3', { textContent: r.title }),
+        el('div', { className: 'meta', textContent: Cuisine.seasonsLabel(r) }),
+        el('div', { className: 'tags' }, [el('span', { className: 'tag', textContent: r.category })])
+      ])));
+    }
+
+    if (!editing) renderRecent();
+  </script>
+</body>
+</html>

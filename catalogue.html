@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Toutes mes recettes – Mon App Cuisine</title>
+  <link rel="stylesheet" href="cuisine.css">
+</head>
+<body>
+  <nav class="pages" aria-label="Pages cuisine">
+    <div class="container">
+      <a href="index.html">🍳 Accueil</a>
+      <a href="recettes.html">Enregistrer</a>
+      <a href="menus.html">Menus de la semaine</a>
+      <a href="catalogue.html" aria-current="page">Toutes mes recettes</a>
+      <a href="historique.html">Historique</a>
+    </div>
+  </nav>
+
+  <header class="container">
+    <h1>Toutes mes <span>recettes</span></h1>
+    <p>Retrouve, consulte et modifie les recettes de ta base.</p>
+  </header>
+
+  <main class="container">
+    <section>
+      <div class="toolbar">
+        <input class="grow" id="search" type="search" placeholder="Rechercher (nom, ingrédient, note…)" aria-label="Rechercher une recette">
+        <select id="category" aria-label="Filtrer par catégorie"></select>
+        <select id="season" aria-label="Filtrer par saison"></select>
+        <select id="sort" aria-label="Trier">
+          <option value="title">Tri : nom</option>
+          <option value="recent">Tri : plus récentes</option>
+          <option value="time">Tri : plus rapides</option>
+          <option value="cooked">Tri : plus cuisinées</option>
+        </select>
+        <a class="btn primary" href="recettes.html">+ Nouvelle recette</a>
+      </div>
+      <div class="meta" id="count"></div>
+      <div class="grid" id="list" style="margin-top: 12px;"></div>
+    </section>
+
+    <section>
+      <h2>Sauvegarde</h2>
+      <div class="toolbar">
+        <button class="btn" id="export">Exporter mes données (JSON)</button>
+        <button class="btn" id="import">Importer un fichier</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+      </div>
+      <p class="meta">
+        Tes recettes et l'historique de tes menus sont enregistrés dans ce navigateur, sur cet appareil.
+        Exporte-les régulièrement pour garder une copie ou les transférer sur un autre appareil.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">Mon App Cuisine — Fait avec ❤️ et un peu de beurre.</div>
+  </footer>
+
+  <dialog id="view">
+    <div class="detail" id="detail"></div>
+    <p class="meta" id="cooked" style="margin-top: 12px;"></p>
+    <div class="actions">
+      <button class="btn danger" id="delete">Supprimer</button>
+      <span class="spacer"></span>
+      <a class="btn" id="edit" href="#">Modifier</a>
+      <button class="btn primary" id="close">Fermer</button>
+    </div>
+  </dialog>
+
+  <script src="cuisine.js"></script>
+  <script>
+    const { el, normalize } = Cuisine;
+    const $ = id => document.getElementById(id);
+    const search = $('search'), category = $('category'), season = $('season'), sort = $('sort');
+    const view = $('view');
+    let viewingId = null;
+
+    category.append(el('option', { value: '', textContent: 'Toutes les catégories' }));
+    Cuisine.CATEGORIES.forEach(c => category.append(el('option', { value: c, textContent: c })));
+    season.append(el('option', { value: '', textContent: 'Toutes les saisons' }));
+    Cuisine.SEASONS.forEach(s => season.append(el('option', { value: s, textContent: s })));
+
+    // Nombre de fois où chaque recette a été validée dans un menu.
+    function cookedCounts() {
+      const counts = {};
+      Cuisine.getHistory().forEach(m => m.items.forEach(it => { counts[it.recipeId] = (counts[it.recipeId] || 0) + 1; }));
+      return counts;
+    }
+
+    function render() {
+      const recipes = Cuisine.getRecipes();
+      const counts = cookedCounts();
+      const q = normalize(search.value.trim());
+      const shown = recipes
+        .filter(r => !category.value || r.category === category.value)
+        .filter(r => !season.value || Cuisine.fitsSeason(r, season.value))
+        .filter(r => !q || normalize([r.title, r.ingredients.join(' '), r.notes, r.category, r.source].join(' ')).includes(q));
+      const byTitle = (a, b) => a.title.localeCompare(b.title, 'fr');
+      shown.sort({
+        title: byTitle,
+        recent: (a, b) => String(b.createdAt).localeCompare(String(a.createdAt)),
+        time: (a, b) => (Cuisine.totalTime(a) || Infinity) - (Cuisine.totalTime(b) || Infinity) || byTitle(a, b),
+        cooked: (a, b) => (counts[b.id] || 0) - (counts[a.id] || 0) || byTitle(a, b)
+      }[sort.value]);
+
+      const list = $('list');
+      list.replaceChildren();
+      if (!recipes.length) {
+        list.append(el('p', { className: 'empty' }, ['Ta base est vide pour l\'instant. ',
+          el('a', { href: 'recettes.html', textContent: 'Enregistre ta première recette' }), '.']));
+      } else if (!shown.length) {
+        list.append(el('p', { className: 'empty', textContent: 'Aucune recette ne correspond à ta recherche.' }));
+      }
+      shown.forEach(r => {
+        const time = Cuisine.totalTime(r);
+        const meta = [r.servings ? r.servings + ' pers.' : '', time ? time + ' min' : '',
+          counts[r.id] ? 'cuisinée ' + counts[r.id] + ' fois' : ''].filter(Boolean).join(' · ');
+        const card = el('button', { className: 'card' }, [
+          el('h3', { textContent: r.title }),
+          el('div', { className: 'meta', textContent: meta || ' ' }),
+          el('div', { className: 'tags' }, [
+            el('span', { className: 'tag', textContent: r.category }),
+            el('span', { className: 'tag', textContent: Cuisine.seasonsLabel(r) })
+          ])
+        ]);
+        card.addEventListener('click', () => openView(r.id));
+        list.append(card);
+      });
+      $('count').textContent = (shown.length === recipes.length ? '' : shown.length + ' affichée' + (shown.length > 1 ? 's' : '') + ' sur ')
+        + Cuisine.plural(recipes.length, 'recette') + ' dans ta base';
+    }
+
+    function openView(id) {
+      const r = Cuisine.getRecipes().find(x => x.id === id);
+      if (!r) return;
+      viewingId = id;
+      $('detail').replaceChildren(...Cuisine.recipeDetail(r));
+      const n = cookedCounts()[id] || 0;
+      $('cooked').textContent = n ? 'Validée dans ' + Cuisine.plural(n, 'menu') + '.' : 'Pas encore validée dans un menu.';
+      $('edit').href = 'recettes.html?id=' + encodeURIComponent(id);
+      view.showModal();
+    }
+
+    $('close').addEventListener('click', () => view.close());
+    $('delete').addEventListener('click', () => {
+      const recipes = Cuisine.getRecipes();
+      const r = recipes.find(x => x.id === viewingId);
+      if (!r || !confirm('Supprimer la recette « ' + r.title + ' » ? Elle restera visible dans l\'historique des menus déjà validés.')) return;
+      Cuisine.saveRecipes(recipes.filter(x => x.id !== viewingId));
+      view.close();
+      render();
+    });
+    [search, category, season, sort].forEach(c => c.addEventListener('input', render));
+
+    // Export / import : recettes + historique dans un seul fichier.
+    $('export').addEventListener('click', () => {
+      const data = { recettes: Cuisine.getRecipes(), historique: Cuisine.getHistory(), exporteLe: new Date().toISOString() };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = el('a', { href: URL.createObjectURL(blob), download: 'mes-recettes-' + Cuisine.isoDate(new Date()) + '.json' });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+    });
+    $('import').addEventListener('click', () => $('import-file').click());
+    $('import-file').addEventListener('change', async e => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      let data;
+      try {
+        data = JSON.parse(await file.text());
+      } catch (err) {
+        alert("Ce fichier n'est pas un export valide.");
+        return;
+      }
+      // Ancien format : un simple tableau de recettes.
+      const incomingRecipes = Array.isArray(data) ? data : Array.isArray(data && data.recettes) ? data.recettes : null;
+      const incomingHistory = data && Array.isArray(data.historique) ? data.historique : [];
+      if (!incomingRecipes) {
+        alert("Ce fichier n'est pas un export valide.");
+        return;
+      }
+      const recipes = Cuisine.getRecipes();
+      const knownRecipes = new Set(recipes.map(r => r.id));
+      let addedRecipes = 0;
+      incomingRecipes.forEach(r => {
+        if (!r || typeof r.title !== 'string' || !r.title.trim()) return;
+        if (r.id && knownRecipes.has(String(r.id))) return;
+        const clean = Cuisine.cleanRecipe(r);
+        knownRecipes.add(clean.id);
+        recipes.push(clean);
+        addedRecipes++;
+      });
+      const history = Cuisine.getHistory();
+      const knownMenus = new Set(history.map(m => m.id));
+      let addedMenus = 0;
+      incomingHistory.forEach(m => {
+        if (!m || !m.id || !Array.isArray(m.items) || knownMenus.has(m.id)) return;
+        knownMenus.add(m.id);
+        history.push(m);
+        addedMenus++;
+      });
+      Cuisine.saveRecipes(recipes);
+      Cuisine.saveHistory(history);
+      render();
+      alert(Cuisine.plural(addedRecipes, 'recette') + ' et ' + Cuisine.plural(addedMenus, 'menu') + ' importés.');
+    });
+
+    render();
+  </script>
+</body>
+</html>
