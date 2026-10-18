@@ -159,6 +159,9 @@
     .feature .icon { font-size: 2rem; margin-bottom: 10px; }
     .feature h3 { margin-bottom: 6px; }
     .feature p { color: var(--muted); }
+    .page-link { transition: border-color 0.15s ease, transform 0.15s ease; }
+    .page-link:hover { border-color: var(--accent); transform: translateY(-3px); }
+    .page-link h3 { color: var(--accent); }
 
     footer {
       border-top: 1px solid var(--border);
@@ -182,9 +185,10 @@
       <a href="#" class="logo">🍳 Mon App <span>Cuisine</span></a>
       <nav>
         <ul>
-          <li><a href="#recettes">Recettes</a></li>
-          <li><a href="#fonctionnalites">Fonctionnalités</a></li>
-          <li><a href="#contact">Contact</a></li>
+          <li><a href="recettes.html">Enregistrer</a></li>
+          <li><a href="menus.html">Menus</a></li>
+          <li><a href="catalogue.html">Mes recettes</a></li>
+          <li><a href="historique.html">Historique</a></li>
         </ul>
       </nav>
     </div>
@@ -199,6 +203,34 @@
           <input type="search" id="search-input" placeholder="Rechercher une recette, un ingrédient…" aria-label="Rechercher une recette">
           <button type="submit" class="btn">Chercher</button>
         </form>
+      </div>
+    </section>
+
+    <section id="mes-pages">
+      <div class="container">
+        <h2>Mon espace cuisine</h2>
+        <div class="features">
+          <a class="feature page-link" href="recettes.html">
+            <div class="icon">✍️</div>
+            <h3>Enregistrer une recette</h3>
+            <p>Ajouter à ma base les recettes que j'ai retenues.</p>
+          </a>
+          <a class="feature page-link" href="menus.html">
+            <div class="icon">🗓️</div>
+            <h3>Menus de la semaine</h3>
+            <p>Composer le menu de la semaine à venir à partir de mes recettes.</p>
+          </a>
+          <a class="feature page-link" href="catalogue.html">
+            <div class="icon">📖</div>
+            <h3>Toutes mes recettes</h3>
+            <p>Retrouver, consulter et modifier toutes les recettes enregistrées.</p>
+          </a>
+          <a class="feature page-link" href="historique.html">
+            <div class="icon">🕘</div>
+            <h3>Historique</h3>
+            <p>Revoir les menus et les recettes que j'ai validés.</p>
+          </a>
+        </div>
       </div>
     </section>
 
