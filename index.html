@@ -2,185 +2,375 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Mon App Cuisine : trouvez, organisez et partagez vos recettes préférées.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Mon App Cuisine</title>
+  <meta name="claude:viewport-fit-sides" content="cover">
+  <meta name="description" content="Mon App Cuisine : trouvez, organisez et partagez vos recettes préférées.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
   <style>
+    /* Mise en page : bannière en deux colonnes (texte + carte « recette du jour »),
+       puis grille de recettes et bandeau de fonctionnalités sur fond bleu nuit. */
     :root {
-      --bg: #fffaf5;
+      --bg: #f4f7fc;
       --surface: #ffffff;
-      --text: #2b2118;
-      --muted: #7a6a5c;
-      --accent: #e0632b;
-      --accent-dark: #b94b1a;
-      --border: #f0e2d4;
-      --radius: 14px;
+      --surface-2: #e8eef9;
+      --text: #0c1a33;
+      --muted: #52607a;
+      --border: #d8e1f0;
+      --primary: #1f5bff;
+      --primary-hover: #1442c9;
+      --on-primary: #ffffff;
+      --sky: #7cc7ff;
+      --night: #0b1a3a;
+      --night-text: #e6eeff;
+      --night-muted: #9fb2d9;
+      --tile-a: #dbe7ff;
+      --tile-b: #c4f0ff;
+      --shadow: 0 10px 30px -12px rgba(15, 45, 120, 0.25);
+
+      --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+      --font-body: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+      --radius: 18px;
     }
 
     @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #1b1612;
-        --surface: #262019;
-        --text: #f5ece3;
-        --muted: #b8a797;
-        --accent: #f07a42;
-        --accent-dark: #ff9a68;
-        --border: #3a3027;
+      :root:not([data-theme="light"]) {
+        --bg: #07111f;
+        --surface: #0f1d33;
+        --surface-2: #142744;
+        --text: #e8efff;
+        --muted: #93a4c4;
+        --border: #1f3354;
+        --primary: #4d82ff;
+        --primary-hover: #77a0ff;
+        --on-primary: #06101f;
+        --sky: #7cc7ff;
+        --night: #0c1f40;
+        --night-text: #e6eeff;
+        --night-muted: #9fb2d9;
+        --tile-a: #17305a;
+        --tile-b: #0f3a52;
+        --shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+        color-scheme: dark;
       }
+    }
+    :root[data-theme="dark"] {
+      --bg: #07111f;
+      --surface: #0f1d33;
+      --surface-2: #142744;
+      --text: #e8efff;
+      --muted: #93a4c4;
+      --border: #1f3354;
+      --primary: #4d82ff;
+      --primary-hover: #77a0ff;
+      --on-primary: #06101f;
+      --sky: #7cc7ff;
+      --night: #0c1f40;
+      --night-text: #e6eeff;
+      --night-muted: #9fb2d9;
+      --tile-a: #17305a;
+      --tile-b: #0f3a52;
+      --shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+      color-scheme: dark;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-family: var(--font-body);
+      font-size: 16px;
       background: var(--bg);
       color: var(--text);
       line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0 0 auto;
+      height: env(safe-area-inset-top, 0px);
+      z-index: 20;
+      background: var(--bg);
     }
 
     a { color: inherit; text-decoration: none; }
+    h1, h2, h3 { font-family: var(--font-display); line-height: 1.1; text-wrap: balance; }
 
-    .container { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+    :focus-visible { outline: 3px solid var(--sky); outline-offset: 2px; border-radius: 8px; }
+
+    .wrap {
+      max-width: 1160px;
+      margin: 0 auto;
+      padding-left: max(20px, env(safe-area-inset-left, 0px));
+      padding-right: max(20px, env(safe-area-inset-right, 0px));
+    }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--primary);
+    }
 
     /* En-tête */
     header {
       position: sticky;
-      top: 0;
-      background: var(--bg);
+      top: env(safe-area-inset-top, 0px);
+      z-index: 15;
+      background: color-mix(in srgb, var(--bg) 82%, transparent);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
       border-bottom: 1px solid var(--border);
-      z-index: 10;
     }
-    .nav {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 64px;
+    .nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 68px; }
+    .logo { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 800; font-size: 1.25rem; letter-spacing: -0.02em; }
+    .logo-mark {
+      width: 34px; height: 34px; border-radius: 10px;
+      display: grid; place-items: center;
+      background: var(--primary); color: var(--on-primary);
     }
-    .logo { font-size: 1.3rem; font-weight: 700; }
-    .logo span { color: var(--accent); }
-    .nav ul { display: flex; gap: 24px; list-style: none; }
-    .nav ul a { color: var(--muted); font-weight: 500; }
-    .nav ul a:hover { color: var(--accent); }
+    .nav ul { display: flex; gap: 6px; list-style: none; }
+    .nav ul a { display: block; padding: 8px 14px; border-radius: 999px; color: var(--muted); font-weight: 500; transition: background 0.2s, color 0.2s; }
+    .nav ul a:hover { background: var(--surface-2); color: var(--text); }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--primary); color: var(--on-primary);
+      border: none; border-radius: 999px;
+      padding: 12px 22px;
+      font: 600 1rem var(--font-body);
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s;
+    }
+    .btn:hover { background: var(--primary-hover); transform: translateY(-1px); }
 
     /* Bannière */
-    .hero { padding: 72px 0 56px; text-align: center; }
-    .hero h1 {
-      font-size: clamp(2rem, 5vw, 3.2rem);
-      line-height: 1.15;
-      margin-bottom: 16px;
+    .hero { padding-block: 64px 56px; position: relative; overflow: hidden; }
+    .hero::before {
+      content: "";
+      position: absolute;
+      width: 620px; height: 620px;
+      right: -180px; top: -220px;
+      background: radial-gradient(circle, color-mix(in srgb, var(--sky) 45%, transparent), transparent 65%);
+      pointer-events: none;
     }
-    .hero h1 em { color: var(--accent); font-style: normal; }
-    .hero p { color: var(--muted); font-size: 1.1rem; max-width: 560px; margin: 0 auto 32px; }
+    .hero-grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 48px;
+      align-items: center;
+    }
+    .hero-text { min-width: 0; display: flex; flex-direction: column; gap: 22px; }
+    .hero h1 {
+      font-size: clamp(2.5rem, 6.2vw, 4.6rem);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+    }
+    .hero h1 .hl {
+      background: linear-gradient(100deg, var(--primary), var(--sky));
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .hero p.lead { color: var(--muted); font-size: 1.15rem; max-width: 34em; }
 
     .search {
       display: flex;
-      max-width: 520px;
-      margin: 0 auto;
+      align-items: center;
+      gap: 6px;
+      max-width: 540px;
+      padding: 6px 6px 6px 18px;
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 999px;
-      overflow: hidden;
+      box-shadow: var(--shadow);
+      transition: border-color 0.2s;
     }
+    .search:focus-within { border-color: var(--primary); }
+    .search svg { flex: none; color: var(--muted); }
     .search input {
-      flex: 1;
-      min-width: 0;
-      border: none;
-      background: transparent;
-      padding: 14px 20px;
-      font-size: 1rem;
+      flex: 1; min-width: 0;
+      border: none; background: transparent;
+      padding: 10px 4px;
+      font: 1rem var(--font-body);
       color: var(--text);
       outline: none;
     }
-    .btn {
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      padding: 14px 24px;
-      font-size: 1rem;
-      font-weight: 600;
-      cursor: pointer;
-      border-radius: 999px;
+
+    .stats { display: flex; flex-wrap: wrap; gap: 28px; }
+    .stats div { display: flex; flex-direction: column; }
+    .stats strong { font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .stats span { color: var(--muted); font-size: 0.9rem; }
+
+    /* Carte « recette du jour » */
+    .today {
+      position: relative;
+      min-width: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+      animation: float 6s ease-in-out infinite;
     }
-    .btn:hover { background: var(--accent-dark); }
+    .today .visual {
+      aspect-ratio: 4 / 3;
+      max-width: 100%;
+      border-radius: 20px;
+      display: grid; place-items: center;
+      font-size: clamp(4rem, 10vw, 6.5rem);
+      background: linear-gradient(140deg, var(--tile-a), var(--tile-b));
+    }
+    .today .tag {
+      position: absolute; top: 36px; left: 36px;
+      background: var(--primary); color: var(--on-primary);
+      font: 500 0.72rem var(--font-mono);
+      letter-spacing: 0.1em; text-transform: uppercase;
+      padding: 6px 10px; border-radius: 999px;
+    }
+    .today h3 { font-size: 1.45rem; margin-top: 18px; }
+    .today .specs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+    .today .specs div { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; }
+    .today .specs small { display: block; color: var(--muted); font-size: 0.75rem; }
+    .today .specs b { font-family: var(--font-mono); font-weight: 500; font-size: 0.95rem; }
+
+    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
 
     /* Sections */
-    section { padding: 48px 0; }
-    section h2 { font-size: 1.6rem; margin-bottom: 24px; }
+    section.block { padding-block: 56px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 28px; }
+    .section-head h2 { font-size: clamp(1.8rem, 3.6vw, 2.5rem); font-weight: 800; letter-spacing: -0.025em; margin-top: 6px; }
 
-    .categories { display: flex; flex-wrap: wrap; gap: 12px; }
+    .categories { display: flex; flex-wrap: wrap; gap: 8px; }
     .chip {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 999px;
-      padding: 8px 18px;
+      padding: 8px 16px;
       cursor: pointer;
-      font-size: 0.95rem;
+      font: 500 0.95rem var(--font-body);
       color: var(--text);
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
     }
-    .chip.active, .chip:hover { border-color: var(--accent); color: var(--accent); }
+    .chip:hover { border-color: var(--primary); }
+    .chip.active { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
       gap: 20px;
     }
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      overflow: hidden;
-      transition: transform 0.15s ease;
+      padding: 12px;
+      display: flex; flex-direction: column; gap: 14px;
+      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s;
+      animation: rise 0.45s ease both;
     }
-    .card:hover { transform: translateY(-3px); }
+    .card:hover { transform: translateY(-6px); box-shadow: var(--shadow); border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); }
     .card .thumb {
-      height: 140px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 3.5rem;
-      background: linear-gradient(135deg, #ffe3cf, #ffd0b0);
+      aspect-ratio: 16 / 10;
+      max-width: 100%;
+      border-radius: 12px;
+      display: grid; place-items: center;
+      font-size: 3.6rem;
+      background: linear-gradient(140deg, var(--tile-a), var(--tile-b));
+      transition: transform 0.25s ease;
     }
-    .card .body { padding: 16px; }
-    .card h3 { font-size: 1.1rem; margin-bottom: 6px; }
-    .card .meta { color: var(--muted); font-size: 0.9rem; display: flex; gap: 14px; }
-    .empty { color: var(--muted); }
-
-    .features {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 20px;
-    }
-    .feature {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 24px;
-    }
-    .feature .icon { font-size: 2rem; margin-bottom: 10px; }
-    .feature h3 { margin-bottom: 6px; }
-    .feature p { color: var(--muted); }
-
-    footer {
-      border-top: 1px solid var(--border);
-      padding: 24px 0;
-      text-align: center;
+    .card:hover .thumb { transform: scale(1.03); }
+    .card .body { padding: 0 6px 6px; display: flex; flex-direction: column; gap: 10px; }
+    .card .cat { font: 500 0.72rem var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--primary); }
+    .card h3 { font-size: 1.2rem; font-weight: 700; }
+    .card .meta { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pill {
+      font: 500 0.8rem var(--font-mono);
+      background: var(--surface-2);
       color: var(--muted);
-      font-size: 0.9rem;
-      margin-top: 32px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-variant-numeric: tabular-nums;
     }
+    .empty { color: var(--muted); padding: 24px 0; }
 
+    @keyframes rise { from { opacity: 0.2; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+    /* Bandeau fonctionnalités */
+    .features-band {
+      background: var(--night);
+      color: var(--night-text);
+      border-radius: 32px;
+      padding-block: 56px;
+      position: relative;
+      overflow: hidden;
+    }
+    .features-band::after {
+      content: "";
+      position: absolute;
+      width: 480px; height: 480px;
+      left: -160px; bottom: -260px;
+      background: radial-gradient(circle, color-mix(in srgb, var(--primary) 55%, transparent), transparent 65%);
+      pointer-events: none;
+    }
+    .features-band .inner { position: relative; padding-inline: clamp(20px, 5vw, 56px); }
+    .features-band .eyebrow { color: var(--sky); }
+    .features-band h2 { color: var(--night-text); }
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .feature {
+      min-width: 0;
+      background: color-mix(in srgb, var(--night-text) 6%, transparent);
+      border: 1px solid color-mix(in srgb, var(--night-text) 12%, transparent);
+      border-radius: var(--radius);
+      padding: 26px;
+      display: flex; flex-direction: column; gap: 10px;
+      transition: background 0.25s, transform 0.25s;
+    }
+    .feature:hover { background: color-mix(in srgb, var(--night-text) 11%, transparent); transform: translateY(-4px); }
+    .feature .icon {
+      width: 46px; height: 46px; border-radius: 14px;
+      display: grid; place-items: center;
+      background: color-mix(in srgb, var(--sky) 18%, transparent);
+      color: var(--sky);
+    }
+    .feature h3 { font-size: 1.25rem; color: var(--night-text); }
+    .feature p { color: var(--night-muted); }
+
+    footer { padding-block: 40px; color: var(--muted); font-size: 0.9rem; }
+    footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+
+    @media (max-width: 860px) {
+      .hero-grid { grid-template-columns: 1fr; }
+      .today { max-width: 460px; }
+      .features { grid-template-columns: 1fr; }
+    }
     @media (max-width: 600px) {
       .nav ul { display: none; }
-      .hero { padding: 48px 0 32px; }
-      .btn { padding: 14px 18px; }
+      .hero { padding-block: 40px 32px; }
+      .search { padding-left: 14px; }
+      .btn { padding: 12px 16px; }
+      .features-band { border-radius: 24px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
     }
   </style>
 </head>
 <body>
   <header>
-    <div class="container nav">
-      <a href="#" class="logo">🍳 Mon App <span>Cuisine</span></a>
-      <nav>
+    <div class="wrap nav">
+      <a href="#" class="logo">
+        <span class="logo-mark" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><path d="M6 17h12"/></svg>
+        </span>
+        Mon App Cuisine
+      </a>
+      <nav aria-label="Navigation principale">
         <ul>
           <li><a href="#recettes">Recettes</a></li>
           <li><a href="#fonctionnalites">Fonctionnalités</a></li>
@@ -192,42 +382,82 @@
 
   <main>
     <section class="hero">
-      <div class="container">
-        <h1>Cuisinez avec <em>plaisir</em>,<br>chaque jour.</h1>
-        <p>Trouvez l'inspiration, organisez vos recettes favorites et préparez vos repas de la semaine en quelques clics.</p>
-        <form class="search" id="search-form">
-          <input type="search" id="search-input" placeholder="Rechercher une recette, un ingrédient…" aria-label="Rechercher une recette">
-          <button type="submit" class="btn">Chercher</button>
-        </form>
+      <div class="wrap hero-grid">
+        <div class="hero-text">
+          <span class="eyebrow">Recettes · Menus · Courses</span>
+          <h1>La cuisine de tous les jours, <span class="hl">en plus simple.</span></h1>
+          <p class="lead">Trouvez l'inspiration, gardez vos recettes favorites au même endroit et préparez les repas de la semaine en quelques clics.</p>
+          <form class="search" id="search-form" role="search">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" id="search-input" placeholder="Une recette, un ingrédient…" aria-label="Rechercher une recette">
+            <button type="submit" class="btn">Chercher</button>
+          </form>
+          <div class="stats">
+            <div><strong id="stat-count">8</strong><span>recettes</span></div>
+            <div><strong id="stat-cats">4</strong><span>catégories</span></div>
+            <div><strong>20 min</strong><span>la plus rapide</span></div>
+          </div>
+        </div>
+
+        <aside class="today" aria-label="Recette du jour">
+          <span class="tag">Recette du jour</span>
+          <div class="visual" aria-hidden="true">🍎</div>
+          <h3>Tarte Tatin</h3>
+          <div class="specs">
+            <div><small>Préparation</small><b>1 h</b></div>
+            <div><small>Four</small><b>180 °C · th. 6</b></div>
+            <div><small>Portions</small><b>6 pers.</b></div>
+          </div>
+        </aside>
       </div>
     </section>
 
-    <section id="recettes">
-      <div class="container">
-        <h2>Recettes populaires</h2>
-        <div class="categories" id="categories"></div>
-        <div class="grid" id="recipes" style="margin-top: 24px;"></div>
+    <section class="block" id="recettes">
+      <div class="wrap">
+        <div class="section-head">
+          <div>
+            <span class="eyebrow">À la carte</span>
+            <h2>Recettes populaires</h2>
+          </div>
+          <div class="categories" id="categories"></div>
+        </div>
+        <div class="grid" id="recipes"></div>
       </div>
     </section>
 
-    <section id="fonctionnalites">
-      <div class="container">
-        <h2>Pourquoi Mon App Cuisine ?</h2>
-        <div class="features">
-          <div class="feature">
-            <div class="icon">📖</div>
-            <h3>Carnet de recettes</h3>
-            <p>Sauvegardez toutes vos recettes au même endroit, accessibles partout.</p>
-          </div>
-          <div class="feature">
-            <div class="icon">🗓️</div>
-            <h3>Planning des repas</h3>
-            <p>Organisez vos menus de la semaine et gagnez du temps au quotidien.</p>
-          </div>
-          <div class="feature">
-            <div class="icon">🛒</div>
-            <h3>Liste de courses</h3>
-            <p>Générez automatiquement la liste des ingrédients à acheter.</p>
+    <section class="block" id="fonctionnalites">
+      <div class="wrap">
+        <div class="features-band">
+          <div class="inner">
+            <div class="section-head">
+              <div>
+                <span class="eyebrow">Fonctionnalités</span>
+                <h2>Tout pour bien cuisiner</h2>
+              </div>
+            </div>
+            <div class="features">
+              <div class="feature">
+                <div class="icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5V5a2 2 0 0 1 2-2h14v16H6.5a2.5 2.5 0 0 0 0 5H20"/></svg>
+                </div>
+                <h3>Carnet de recettes</h3>
+                <p>Toutes vos recettes au même endroit, sur ordinateur comme sur téléphone.</p>
+              </div>
+              <div class="feature">
+                <div class="icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                </div>
+                <h3>Planning des repas</h3>
+                <p>Composez vos menus du lundi au dimanche et gagnez du temps au quotidien.</p>
+              </div>
+              <div class="feature">
+                <div class="icon" aria-hidden="true">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>
+                </div>
+                <h3>Liste de courses</h3>
+                <p>La liste des ingrédients à acheter se crée à partir de vos menus.</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -235,21 +465,22 @@
   </main>
 
   <footer id="contact">
-    <div class="container">
-      © <span id="year"></span> Mon App Cuisine — Fait avec ❤️ et un peu de beurre.
+    <div class="wrap">
+      <span>© <span id="year"></span> Mon App Cuisine</span>
+      <span>Fait avec soin, et un peu de beurre.</span>
     </div>
   </footer>
 
   <script>
     const recipes = [
-      { name: "Quiche lorraine", emoji: "🥧", time: "45 min", level: "Facile", category: "Plats" },
-      { name: "Ratatouille", emoji: "🍆", time: "1 h", level: "Facile", category: "Végétarien" },
-      { name: "Bœuf bourguignon", emoji: "🍲", time: "3 h", level: "Moyen", category: "Plats" },
-      { name: "Salade niçoise", emoji: "🥗", time: "20 min", level: "Facile", category: "Entrées" },
-      { name: "Crêpes", emoji: "🥞", time: "30 min", level: "Facile", category: "Desserts" },
-      { name: "Tarte Tatin", emoji: "🍎", time: "1 h", level: "Moyen", category: "Desserts" },
-      { name: "Soupe à l'oignon", emoji: "🧅", time: "50 min", level: "Facile", category: "Entrées" },
-      { name: "Gratin dauphinois", emoji: "🥔", time: "1 h 15", level: "Facile", category: "Végétarien" }
+      { name: "Quiche lorraine", emoji: "🥧", time: "45 min", level: "Facile", servings: 6, category: "Plats" },
+      { name: "Ratatouille", emoji: "🍆", time: "1 h", level: "Facile", servings: 4, category: "Végétarien" },
+      { name: "Bœuf bourguignon", emoji: "🍲", time: "3 h", level: "Moyen", servings: 6, category: "Plats" },
+      { name: "Salade niçoise", emoji: "🥗", time: "20 min", level: "Facile", servings: 4, category: "Entrées" },
+      { name: "Crêpes", emoji: "🥞", time: "30 min", level: "Facile", servings: 4, category: "Desserts" },
+      { name: "Tarte Tatin", emoji: "🍎", time: "1 h", level: "Moyen", servings: 6, category: "Desserts" },
+      { name: "Soupe à l'oignon", emoji: "🧅", time: "50 min", level: "Facile", servings: 4, category: "Entrées" },
+      { name: "Gratin dauphinois", emoji: "🥔", time: "1 h 15", level: "Facile", servings: 6, category: "Végétarien" }
     ];
 
     const categories = ["Toutes", ...new Set(recipes.map(r => r.category))];
@@ -267,7 +498,9 @@
       catBox.innerHTML = "";
       categories.forEach(cat => {
         const btn = document.createElement("button");
+        btn.type = "button";
         btn.className = "chip" + (cat === activeCategory ? " active" : "");
+        btn.setAttribute("aria-pressed", cat === activeCategory);
         btn.textContent = cat;
         btn.addEventListener("click", () => {
           activeCategory = cat;
@@ -285,15 +518,20 @@
         normalize(r.name).includes(q)
       );
       grid.innerHTML = list.length
-        ? list.map(r => `
-            <article class="card">
-              <div class="thumb">${r.emoji}</div>
+        ? list.map((r, i) => `
+            <article class="card" style="animation-delay:${i * 60}ms">
+              <div class="thumb" aria-hidden="true">${r.emoji}</div>
               <div class="body">
+                <span class="cat">${r.category}</span>
                 <h3>${r.name}</h3>
-                <div class="meta"><span>⏱ ${r.time}</span><span>👩‍🍳 ${r.level}</span></div>
+                <div class="meta">
+                  <span class="pill">${r.time}</span>
+                  <span class="pill">${r.level}</span>
+                  <span class="pill">${r.servings} pers.</span>
+                </div>
               </div>
             </article>`).join("")
-        : '<p class="empty">Aucune recette trouvée.</p>';
+        : '<p class="empty">Aucune recette ne correspond à votre recherche. Essayez un autre mot ou une autre catégorie.</p>';
     }
 
     document.getElementById("search-form").addEventListener("submit", e => {
@@ -307,6 +545,8 @@
       renderRecipes();
     });
 
+    document.getElementById("stat-count").textContent = recipes.length;
+    document.getElementById("stat-cats").textContent = categories.length - 1;
     document.getElementById("year").textContent = new Date().getFullYear();
     renderCategories();
     renderRecipes();
