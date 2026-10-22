@@ -523,7 +523,7 @@ const Cuisine = (() => {
     });
   }
 
-  // ---- Conversion automatique d'un lien par le serveur (Cloudflare Pages Functions) ----
+  // ---- Conversion automatique d'un lien par le serveur (Cloudflare Workers, voir server/worker.js) ----
   let serverCheck = null;
   // true si le site tourne avec son serveur (/api/extraire répond), false sinon
   // (fichier ouvert en local, GitHub Pages…).

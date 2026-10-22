@@ -1,7 +1,7 @@
-// /api/image?url=… — Cloudflare Pages Function.
+// /api/image?url=… — appelée par le Worker (server/worker.js).
 // Récupère la photo d'une recette sur le site d'origine et la renvoie depuis notre propre domaine :
 // le navigateur peut alors la réduire et la garder (il n'en a pas le droit sur un autre domaine).
-import { checkUrl } from '../../lib/extraction.js';
+import { checkUrl } from './extraction.js';
 
 const MAX_IMAGE = 8 * 1024 * 1024;
 

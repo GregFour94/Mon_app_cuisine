@@ -1,0 +1,9 @@
+# Fichiers du dépôt à ne pas publier comme pages du site
+.git
+.github
+.wrangler
+node_modules
+server
+wrangler.jsonc
+.assetsignore
+*.md

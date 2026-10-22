@@ -1,4 +1,4 @@
-// Lecture d'une recette à partir d'un lien, côté serveur (Cloudflare Pages Functions).
+// Lecture d'une recette à partir d'un lien, côté serveur (Cloudflare Workers).
 // 1. Sites de cuisine : la plupart décrivent leur recette au format schema.org « Recipe »
 //    (balise <script type="application/ld+json">), qu'on lit directement.
 // 2. TikTok et YouTube : leur service oEmbed public donne le titre (souvent la légende),

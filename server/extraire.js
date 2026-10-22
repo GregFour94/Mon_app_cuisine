@@ -1,7 +1,7 @@
-// /api/extraire — Cloudflare Pages Function.
+// /api/extraire — appelée par le Worker (server/worker.js).
 // GET  : indique que le serveur est présent (la page d'import active alors la récupération automatique).
-// POST { url } : renvoie la recette trouvée derrière le lien (voir lib/extraction.js).
-import { checkUrl, extractRecipe } from '../../lib/extraction.js';
+// POST { url } : renvoie la recette trouvée derrière le lien (voir extraction.js).
+import { checkUrl, extractRecipe } from './extraction.js';
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
