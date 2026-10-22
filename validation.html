@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Valider les recettes – Mon App Cuisine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="cuisine.css">
+  <style>
+    .summary { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; margin-bottom: 20px; }
+    .summary .figures { display: flex; flex-wrap: wrap; gap: 24px; margin-right: auto; }
+    .summary .figures div { display: flex; flex-direction: column; }
+    .summary strong { font-family: var(--font-display); font-size: 1.8rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.1; }
+    .summary .figures span { color: var(--muted); font-size: 0.88rem; }
+    .summary .ready strong { color: var(--ok); }
+    .summary .todo strong { color: var(--warn-text); }
+
+    .workspace { display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); gap: 20px; align-items: start; }
+
+    .queue { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .queue-tools { display: grid; gap: 10px; padding: 14px; border-bottom: 1px solid var(--border); }
+    .queue-tools .line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .queue-tools label.all { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 0.88rem; color: var(--muted); }
+    .queue ul { list-style: none; max-height: 70vh; overflow-y: auto; }
+    .queue li { border-bottom: 1px solid var(--border); }
+    .queue li:last-child { border-bottom: none; }
+    .item { display: grid; grid-template-columns: auto 44px 1fr; gap: 10px; align-items: center; padding: 10px 14px; cursor: pointer; transition: background 0.2s; }
+    .item:hover { background: var(--bg); }
+    .item[aria-current="true"] { background: color-mix(in srgb, var(--accent) 9%, var(--surface)); box-shadow: inset 3px 0 0 var(--accent); }
+    .item .thumb {
+      width: 44px; height: 44px; border-radius: 10px; object-fit: cover;
+      display: grid; place-items: center; background: var(--surface-2); color: var(--accent);
+      font-family: var(--font-mono); font-size: 0.62rem; font-weight: 500;
+    }
+    .item .info { min-width: 0; display: grid; gap: 3px; }
+    .item .info b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    .item .info b.untitled { color: var(--muted); font-style: italic; font-weight: 500; }
+    .item .info .sub { display: flex; gap: 6px; align-items: center; min-width: 0; }
+    .item .info .sub span:last-child { color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .bulk { display: grid; gap: 12px; padding: 14px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+    .bulk h3 { font-size: 0.95rem; }
+    .bulk .line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .bulk .line > small { width: 100%; color: var(--muted); font-weight: 600; font-size: 0.78rem; }
+    .bulk select { width: auto; padding: 6px 10px; }
+
+    .editor { min-width: 0; }
+    .editor .panel { display: grid; gap: 18px; }
+    .editor-head { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; }
+    .origin { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: start; background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .origin img { width: 160px; max-width: 100%; border-radius: 10px; cursor: zoom-in; }
+    .origin .text { min-width: 0; display: grid; gap: 6px; }
+    .origin a { overflow-wrap: anywhere; }
+    .required-title { display: flex; align-items: baseline; gap: 8px; }
+    .must { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn-text); background: var(--warn-bg); padding: 2px 8px; border-radius: 999px; font-weight: 500; }
+    .must.done { color: var(--ok); background: var(--ok-bg); }
+    .validate-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 16px; }
+    .validate-bar .why { margin-right: auto; color: var(--muted); font-size: 0.9rem; }
+
+    .zoom { padding: 0; width: min(900px, calc(100% - 32px)); background: var(--surface); }
+    .zoom img { display: block; width: 100%; }
+
+    @media (max-width: 860px) {
+      .workspace { grid-template-columns: 1fr; }
+      .queue ul { max-height: 44vh; }
+      .origin { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="pages" aria-label="Pages cuisine">
+    <div class="container">
+      <a href="index.html" class="logo">
+        <span class="logo-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><path d="M6 17h12"/></svg>
+        </span>
+        Mon App Cuisine
+      </a>
+      <a href="recettes.html">Enregistrer</a>
+      <a href="importer.html">Importer</a>
+      <a href="validation.html" aria-current="page">À valider</a>
+      <a href="menus.html">Menus de la semaine</a>
+      <a href="catalogue.html">Toutes mes recettes</a>
+      <a href="historique.html">Historique</a>
+    </div>
+  </nav>
+
+  <header class="container">
+    <h1>Valider les <span>imports</span></h1>
+    <p>Vérifie chaque recette importée et précise la saison et le repas. Une recette n'entre dans ta base qu'une fois validée.</p>
+  </header>
+
+  <main class="container">
+    <div id="notice"></div>
+
+    <div id="empty" hidden>
+      <div class="empty">
+        <p><strong>Aucune recette en attente.</strong></p>
+        <p>Les recettes importées depuis un fichier, un lien ou un compte de réseau social apparaîtront ici.</p>
+        <div class="actions" style="justify-content: center; margin-top: 14px;">
+          <button type="button" class="btn" id="samples">Essayer avec des exemples</button>
+          <a class="btn primary" href="importer.html">Importer des recettes</a>
+        </div>
+      </div>
+    </div>
+
+    <div id="content" hidden>
+      <div class="summary">
+        <div class="figures">
+          <div><strong id="n-total">0</strong><span>en attente</span></div>
+          <div class="ready"><strong id="n-ready">0</strong><span>prêtes à valider</span></div>
+          <div class="todo"><strong id="n-todo">0</strong><span>à compléter</span></div>
+        </div>
+        <a class="btn" href="importer.html">Importer d'autres recettes</a>
+        <button type="button" class="btn primary" id="validate-ready">Valider les recettes prêtes</button>
+      </div>
+
+      <div class="workspace">
+        <aside class="queue" aria-label="Recettes en attente">
+          <div class="queue-tools">
+            <div class="line" id="filters"></div>
+            <label class="all"><input type="checkbox" id="select-all"> Tout sélectionner</label>
+          </div>
+          <div class="bulk" id="bulk" hidden>
+            <h3 id="bulk-title"></h3>
+            <div class="line"><small>Saison</small><span id="bulk-seasons" class="line"></span></div>
+            <div class="line"><small>Repas</small><span id="bulk-meals" class="line"></span></div>
+            <div class="line"><small>Catégorie</small><select id="bulk-category" aria-label="Catégorie pour la sélection"><option value="">Ne pas changer</option></select></div>
+            <div class="line">
+              <button type="button" class="btn small primary" id="bulk-apply">Appliquer</button>
+              <button type="button" class="btn small" id="bulk-validate">Valider les prêtes</button>
+              <button type="button" class="btn small danger" id="bulk-reject">Rejeter</button>
+            </div>
+          </div>
+          <ul id="queue"></ul>
+        </aside>
+
+        <section class="editor" id="editor" aria-live="polite"></section>
+      </div>
+    </div>
+
+    <dialog class="zoom" id="zoom"><img id="zoom-img" alt="Photo importée"></dialog>
+  </main>
+
+  <footer>
+    <div class="container">© Mon App Cuisine · Fait avec soin, et un peu de beurre.</div>
+  </footer>
+
+  <script src="cuisine.js"></script>
+  <script>
+    const { el, plural } = Cuisine;
+    const $ = id => document.getElementById(id);
+    const ALL_YEAR = 'Toute l\'année';
+    const ORIGINS = { fichier: 'Fichier', lien: 'Lien', compte: 'Compte' };
+
+    let pending = Cuisine.getPending();
+    let currentId = pending[0]?.id || null;
+    let filter = 'toutes';
+    const selected = new Set();
+    let bulkSeasons = new Set();
+    let bulkMeals = new Set();
+
+    const save = () => Cuisine.savePending(pending);
+    const isReady = p => !Cuisine.pendingMissing(p).length;
+    const sourceLabel = p => p.origin === 'fichier'
+      ? ({ photo: 'Photo', texte: 'Texte', pdf: 'PDF' }[p.platform] || 'Document')
+      : Cuisine.platformLabel(p.platform, p.recipe.source);
+
+    function duplicateOf(p) {
+      const t = Cuisine.normalize(p.recipe.title);
+      return Cuisine.getRecipes().find(r => (t && Cuisine.normalize(r.title) === t) || (p.recipe.source && r.source === p.recipe.source));
+    }
+
+    function notify(kind, text) {
+      $('notice').replaceChildren(el('p', { className: 'notice ' + kind, textContent: text, style: 'margin-bottom: 16px;' }));
+    }
+
+    // Bouton-pastille qui s'allume quand il est actif.
+    function toggle(label, on, onClick) {
+      return el('button', { type: 'button', className: 'chip', textContent: label, ariaPressed: String(on), onclick: onClick });
+    }
+
+    // ---- Passage dans la base définitive ----
+    function validate(ids) {
+      const recipes = Cuisine.getRecipes();
+      const done = [];
+      ids.forEach(id => {
+        const p = pending.find(x => x.id === id);
+        if (!p || !isReady(p)) return;
+        const notes = [p.recipe.notes, p.fileName && !p.recipe.source ? 'Importée depuis le fichier ' + p.fileName : ''].filter(Boolean).join('\n');
+        recipes.push(Cuisine.cleanRecipe({ ...p.recipe, id: undefined, seasons: p.allYear ? [] : p.recipe.seasons, notes, createdAt: new Date().toISOString() }));
+        done.push(p);
+      });
+      if (!done.length || !Cuisine.saveRecipes(recipes)) return 0;
+      pending = pending.filter(p => !done.includes(p));
+      done.forEach(p => selected.delete(p.id));
+      save();
+      return done.length;
+    }
+
+    function reject(ids) {
+      pending = pending.filter(p => !ids.includes(p.id));
+      ids.forEach(id => selected.delete(id));
+      save();
+    }
+
+    function moveOn(fromIndex) {
+      const list = visible();
+      currentId = (list[fromIndex] || list[fromIndex - 1] || pending[0] || {}).id || null;
+    }
+
+    // ---- Liste des recettes en attente ----
+    function visible() {
+      return pending.filter(p => filter === 'toutes' || (filter === 'pretes') === isReady(p));
+    }
+
+    function renderFilters() {
+      const counts = { toutes: pending.length, completer: pending.filter(p => !isReady(p)).length, pretes: pending.filter(isReady).length };
+      const labels = { toutes: 'Toutes', completer: 'À compléter', pretes: 'Prêtes' };
+      $('filters').replaceChildren(...Object.keys(labels).map(k =>
+        toggle(labels[k] + ' · ' + counts[k], filter === k, () => { filter = k; render(); })));
+    }
+
+    function renderQueue() {
+      const list = visible();
+      $('queue').replaceChildren(...list.map(p => {
+        const ready = isReady(p);
+        const cb = el('input', { type: 'checkbox', checked: selected.has(p.id), ariaLabel: 'Sélectionner' });
+        cb.addEventListener('click', e => e.stopPropagation());
+        cb.addEventListener('change', () => { cb.checked ? selected.add(p.id) : selected.delete(p.id); renderBulk(); });
+        const row = el('div', { className: 'item', tabIndex: 0, ariaCurrent: String(p.id === currentId) }, [
+          cb,
+          p.preview ? el('img', { className: 'thumb', src: p.preview, alt: '' }) : el('span', { className: 'thumb', textContent: sourceLabel(p).slice(0, 4).toUpperCase() }),
+          el('div', { className: 'info' }, [
+            el('b', { className: p.recipe.title ? '' : 'untitled', textContent: p.recipe.title || 'Sans nom' }),
+            el('div', { className: 'sub' }, [
+              el('span', { className: 'must' + (ready ? ' done' : ''), textContent: ready ? 'Prête' : 'À compléter' }),
+              el('span', { textContent: sourceLabel(p) + (p.collection ? ' · ' + p.collection : '') })
+            ])
+          ])
+        ]);
+        const open = () => { currentId = p.id; render(); if (innerWidth < 860) $('editor').scrollIntoView({ behavior: 'smooth' }); };
+        row.addEventListener('click', open);
+        row.addEventListener('keydown', e => { if (e.key === 'Enter') open(); });
+        return el('li', {}, [row]);
+      }));
+      if (!list.length) $('queue').append(el('li', {}, [el('p', { className: 'meta', style: 'padding: 16px;', textContent: 'Aucune recette dans ce filtre.' })]));
+      const all = $('select-all');
+      all.checked = list.length > 0 && list.every(p => selected.has(p.id));
+    }
+
+    // ---- Actions groupées ----
+    function renderBulk() {
+      const n = [...selected].filter(id => pending.some(p => p.id === id)).length;
+      $('bulk').hidden = !n;
+      if (!n) return;
+      $('bulk-title').textContent = plural(n, 'recette') + ' sélectionnée' + (n > 1 ? 's' : '');
+      $('bulk-seasons').replaceChildren(...[...Cuisine.SEASONS, ALL_YEAR].map(s => toggle(s, bulkSeasons.has(s), () => {
+        if (s === ALL_YEAR) bulkSeasons = bulkSeasons.has(s) ? new Set() : new Set([s]);
+        else { bulkSeasons.delete(ALL_YEAR); bulkSeasons.has(s) ? bulkSeasons.delete(s) : bulkSeasons.add(s); }
+        renderBulk();
+      })));
+      $('bulk-meals').replaceChildren(...Object.entries(Cuisine.MEALS).map(([k, label]) => toggle(label, bulkMeals.has(k), () => {
+        bulkMeals.has(k) ? bulkMeals.delete(k) : bulkMeals.add(k);
+        renderBulk();
+      })));
+      const readyCount = pending.filter(p => selected.has(p.id) && isReady(p)).length;
+      $('bulk-validate').textContent = 'Valider les prêtes (' + readyCount + ')';
+      $('bulk-validate').disabled = !readyCount;
+    }
+
+    Cuisine.CATEGORIES.forEach(c => $('bulk-category').append(el('option', { value: c, textContent: c })));
+    $('select-all').addEventListener('change', e => {
+      visible().forEach(p => e.target.checked ? selected.add(p.id) : selected.delete(p.id));
+      render();
+    });
+    $('bulk-apply').addEventListener('click', () => {
+      const cat = $('bulk-category').value;
+      if (!bulkSeasons.size && !bulkMeals.size && !cat) { notify('warn', 'Choisis une saison, un repas ou une catégorie à appliquer.'); return; }
+      pending.forEach(p => {
+        if (!selected.has(p.id)) return;
+        if (bulkSeasons.size) {
+          p.allYear = bulkSeasons.has(ALL_YEAR);
+          p.recipe.seasons = p.allYear ? [] : Cuisine.SEASONS.filter(s => bulkSeasons.has(s));
+        }
+        if (bulkMeals.size) p.recipe.meals = Object.keys(Cuisine.MEALS).filter(m => bulkMeals.has(m));
+        if (cat) p.recipe.category = cat;
+      });
+      save();
+      notify('ok', 'Modifications appliquées à ' + plural(selected.size, 'recette') + '.');
+      bulkSeasons = new Set(); bulkMeals = new Set(); $('bulk-category').value = '';
+      render();
+    });
+    $('bulk-validate').addEventListener('click', () => {
+      const n = validate([...selected]);
+      if (n) notify('ok', plural(n, 'recette') + ' ajoutée' + (n > 1 ? 's' : '') + ' à ta base.');
+      moveOn(0);
+      render();
+    });
+    $('bulk-reject').addEventListener('click', () => {
+      const ids = [...selected];
+      if (!confirm('Rejeter ' + plural(ids.length, 'recette') + ' ? Elles ne seront pas ajoutées à ta base.')) return;
+      reject(ids);
+      notify('ok', plural(ids.length, 'recette') + ' rejetée' + (ids.length > 1 ? 's' : '') + '.');
+      moveOn(0);
+      render();
+    });
+    $('validate-ready').addEventListener('click', () => {
+      const n = validate(pending.filter(isReady).map(p => p.id));
+      if (n) notify('ok', plural(n, 'recette') + ' ajoutée' + (n > 1 ? 's' : '') + ' à ta base. ');
+      moveOn(0);
+      render();
+    });
+
+    // ---- Fiche de la recette sélectionnée ----
+    function renderEditor() {
+      const box = $('editor');
+      const p = pending.find(x => x.id === currentId);
+      if (!p) { box.replaceChildren(el('div', { className: 'empty', textContent: 'Choisis une recette dans la liste.' })); return; }
+      const r = p.recipe;
+      const touch = () => { save(); renderSide(); };
+
+      // Origine : photo, lien ou fichier
+      const originText = [el('b', { textContent: ORIGINS[p.origin] + ' · ' + sourceLabel(p) + (p.collection ? ' · collection « ' + p.collection + ' »' : '') })];
+      if (r.source) originText.push(el('a', { href: r.source, target: '_blank', rel: 'noopener', textContent: 'Ouvrir la publication ↗' }));
+      if (p.fileName) originText.push(el('span', { className: 'meta', textContent: p.fileName }));
+      if (p.note) originText.push(el('span', { className: 'meta', textContent: p.note }));
+      const origin = el('div', { className: 'origin' }, [
+        p.preview ? el('img', { src: p.preview, alt: 'Photo importée', onclick: () => { $('zoom-img').src = p.preview; $('zoom').showModal(); } }) : el('span'),
+        el('div', { className: 'text' }, originText)
+      ]);
+      if (!p.preview) origin.style.gridTemplateColumns = '1fr';
+
+      const dup = duplicateOf(p);
+      const dupBox = el('div');
+      const renderDup = () => {
+        const d = duplicateOf(p);
+        dupBox.replaceChildren(...(d ? [el('p', { className: 'notice warn', textContent: 'Une recette « ' + d.title + ' » existe déjà dans ta base. Rejette celle-ci si c\'est un doublon.' })] : []));
+      };
+
+      const input = (name, props = {}) => {
+        const f = el(props.tag || 'input', { value: Array.isArray(r[name]) ? r[name].join('\n') : (r[name] || ''), ...props, tag: undefined });
+        f.addEventListener('input', () => {
+          r[name] = Array.isArray(r[name]) ? Cuisine.lines(f.value) : f.value;
+          if (name === 'title') { renderDup(); renderStatus(); }
+          touch();
+        });
+        return f;
+      };
+
+      // Champs obligatoires : saison et repas
+      const mustSeason = el('span', { className: 'must' });
+      const mustMeal = el('span', { className: 'must' });
+      const mustTitle = el('span', { className: 'must' });
+      const seasonsBox = el('div', { className: 'checks' });
+      const mealsBox = el('div', { className: 'checks' });
+      const renderSeasons = () => seasonsBox.replaceChildren(
+        ...Cuisine.SEASONS.map(s => toggle(s, !p.allYear && r.seasons.includes(s), () => {
+          p.allYear = false;
+          r.seasons = r.seasons.includes(s) ? r.seasons.filter(x => x !== s) : Cuisine.SEASONS.filter(x => x === s || r.seasons.includes(x));
+          renderSeasons(); renderStatus(); touch();
+        })),
+        toggle(ALL_YEAR, p.allYear, () => { p.allYear = !p.allYear; r.seasons = []; renderSeasons(); renderStatus(); touch(); })
+      );
+      const renderMeals = () => mealsBox.replaceChildren(
+        ...Object.entries(Cuisine.MEALS).map(([k, label]) => toggle(label, r.meals.includes(k), () => {
+          r.meals = r.meals.includes(k) ? r.meals.filter(x => x !== k) : Object.keys(Cuisine.MEALS).filter(x => x === k || r.meals.includes(x));
+          renderMeals(); renderStatus(); touch();
+        }))
+      );
+
+      const validateBtn = el('button', { type: 'button', className: 'btn primary', textContent: 'Valider et ajouter à ma base' });
+      const why = el('span', { className: 'why' });
+      const renderStatus = () => {
+        const missing = Cuisine.pendingMissing(p);
+        const mark = (node, ok) => { node.className = 'must' + (ok ? ' done' : ''); node.textContent = ok ? 'OK' : 'Obligatoire'; };
+        mark(mustTitle, !missing.includes('nom'));
+        mark(mustSeason, !missing.includes('saison'));
+        mark(mustMeal, !missing.includes('repas'));
+        validateBtn.disabled = missing.length > 0;
+        why.textContent = missing.length ? 'Il manque : ' + missing.join(', ') + '.' : 'Tout est prêt.';
+      };
+      validateBtn.addEventListener('click', () => {
+        const index = visible().findIndex(x => x.id === p.id);
+        const title = r.title;
+        if (!validate([p.id])) return;
+        notify('ok', '« ' + title + ' » est ajoutée à ta base.');
+        moveOn(index);
+        render();
+      });
+      const rejectBtn = el('button', { type: 'button', className: 'btn danger', textContent: 'Rejeter' });
+      rejectBtn.addEventListener('click', () => {
+        const index = visible().findIndex(x => x.id === p.id);
+        reject([p.id]);
+        notify('ok', 'Recette rejetée.');
+        moveOn(index);
+        render();
+      });
+
+      const category = el('select', { ariaLabel: 'Catégorie' });
+      Cuisine.CATEGORIES.forEach(c => category.append(el('option', { value: c, textContent: c })));
+      category.value = r.category;
+      category.addEventListener('change', () => { r.category = category.value; touch(); });
+
+      box.replaceChildren(el('div', { className: 'panel' }, [
+        el('div', { className: 'editor-head' }, [
+          el('h2', { textContent: r.title || 'Recette sans nom', style: 'margin: 0;' }),
+          el('span', { className: 'meta', textContent: 'Importée le ' + Cuisine.formatDate(new Date(p.importedAt), { day: 'numeric', month: 'long' }) })
+        ]),
+        origin,
+        dupBox,
+        el('label', {}, [el('span', { className: 'required-title' }, ['Nom de la recette ', mustTitle]), input('title', { maxLength: 120, placeholder: 'Ex. Tarte Tatin' })]),
+        el('fieldset', {}, [el('legend', { className: 'required-title' }, ['Saison ', mustSeason]), seasonsBox]),
+        el('fieldset', {}, [el('legend', { className: 'required-title' }, ['Repas ', mustMeal, el('small', { textContent: ' — choisis les deux si elle convient midi et soir' })]), mealsBox]),
+        el('div', { className: 'row' }, [
+          el('label', {}, ['Catégorie', category]),
+          el('label', {}, ['Portions', input('servings', { type: 'number', min: 1, max: 100 })]),
+          el('label', {}, [el('span', {}, ['Préparation ', el('small', { textContent: '(min)' })]), input('prep', { type: 'number', min: 0, max: 1440 })]),
+          el('label', {}, [el('span', {}, ['Cuisson ', el('small', { textContent: '(min)' })]), input('cook', { type: 'number', min: 0, max: 1440 })])
+        ]),
+        el('label', {}, [el('span', {}, ['Ingrédients ', el('small', { textContent: 'un par ligne' })]), input('ingredients', { tag: 'textarea' })]),
+        el('label', {}, [el('span', {}, ['Étapes ', el('small', { textContent: 'une par ligne' })]), input('steps', { tag: 'textarea' })]),
+        el('label', {}, [el('span', {}, ['Source ', el('small', { textContent: 'lien ou livre' })]), input('source', { maxLength: 300 })]),
+        el('label', {}, [el('span', {}, ['Notes ', el('small', { textContent: '(facultatif)' })]), input('notes', { tag: 'textarea', style: 'min-height: 70px;' })]),
+        el('div', { className: 'validate-bar' }, [why, rejectBtn, validateBtn])
+      ]));
+      renderSeasons(); renderMeals(); renderStatus(); renderDup();
+    }
+
+    // Rafraîchit la liste et les compteurs sans reconstruire la fiche en cours de saisie.
+    function renderSide() {
+      $('n-total').textContent = pending.length;
+      $('n-ready').textContent = pending.filter(isReady).length;
+      $('n-todo').textContent = pending.filter(p => !isReady(p)).length;
+      const ready = pending.filter(isReady).length;
+      $('validate-ready').disabled = !ready;
+      $('validate-ready').textContent = ready ? 'Valider les ' + plural(ready, 'recette') + ' prête' + (ready > 1 ? 's' : '') : 'Aucune recette prête';
+      renderFilters();
+      renderQueue();
+      renderBulk();
+    }
+
+    function render() {
+      $('empty').hidden = pending.length > 0;
+      $('content').hidden = !pending.length;
+      if (!pending.length) return;
+      if (!pending.some(p => p.id === currentId)) currentId = (visible()[0] || pending[0]).id;
+      renderSide();
+      renderEditor();
+    }
+
+    // Exemples pour découvrir la page (marqués comme tels).
+    $('samples').addEventListener('click', () => {
+      Cuisine.addPending([
+        { origin: 'fichier', platform: 'texte', fileName: 'velouté-potiron.txt', note: 'Exemple · texte lu automatiquement.',
+          recipe: { title: 'Velouté de potiron', category: 'Entrée', servings: '4', prep: '15', cook: '30',
+            ingredients: ['1 kg de potiron', '1 oignon', '50 cl de bouillon de légumes', '20 cl de crème liquide'],
+            steps: ['Éplucher et couper le potiron en cubes.', 'Faire revenir l\'oignon, ajouter le potiron et le bouillon.', 'Cuire 30 min puis mixer avec la crème.'] } },
+        { origin: 'lien', platform: 'site', note: 'Exemple · lien vers un site de cuisine.',
+          recipe: { title: 'Tarte tatin', category: 'Dessert', source: 'https://www.marmiton.org/recettes/recette_tarte-tatin_12345.aspx' } },
+        { origin: 'compte', platform: 'instagram', collection: 'Recettes à tester', note: 'Exemple · publication Instagram enregistrée.',
+          recipe: { source: 'https://www.instagram.com/p/EXEMPLE123/' } }
+      ]);
+      pending = Cuisine.getPending();
+      currentId = pending[0].id;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

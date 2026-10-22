@@ -19,6 +19,8 @@
         Mon App Cuisine
       </a>
       <a href="recettes.html">Enregistrer</a>
+      <a href="importer.html">Importer</a>
+      <a href="validation.html">À valider</a>
       <a href="menus.html">Menus de la semaine</a>
       <a href="catalogue.html" aria-current="page">Toutes mes recettes</a>
       <a href="historique.html">Historique</a>
@@ -130,7 +132,8 @@
           el('div', { className: 'meta', textContent: meta || ' ' }),
           el('div', { className: 'tags' }, [
             el('span', { className: 'tag', textContent: r.category }),
-            el('span', { className: 'tag', textContent: Cuisine.seasonsLabel(r) })
+            el('span', { className: 'tag', textContent: Cuisine.seasonsLabel(r) }),
+            el('span', { className: 'tag', textContent: Cuisine.mealsLabel(r) })
           ])
         ]);
         card.addEventListener('click', () => openView(r.id));

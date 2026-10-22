@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Importer des recettes – Mon App Cuisine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="cuisine.css">
+  <style>
+    .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .mode {
+      position: relative; min-width: 0;
+      display: flex; flex-direction: column; gap: 10px;
+      text-align: left; font: inherit; color: inherit; cursor: pointer;
+      background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius);
+      padding: 22px;
+      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s, background 0.25s;
+    }
+    .mode:hover { transform: translateY(-4px); box-shadow: var(--shadow); border-color: var(--accent); }
+    .mode[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface)); box-shadow: var(--shadow); }
+    .mode-icon {
+      width: 48px; height: 48px; border-radius: 14px;
+      display: grid; place-items: center;
+      background: var(--surface-2); color: var(--accent);
+      transition: background 0.25s, color 0.25s;
+    }
+    .mode[aria-pressed="true"] .mode-icon { background: var(--accent); color: var(--on-accent); }
+    .mode h3 { font-size: 1.2rem; }
+    .mode p { color: var(--muted); font-size: 0.95rem; }
+    .mode .examples { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); letter-spacing: 0.02em; }
+    .mode .fav {
+      position: absolute; top: 16px; right: 16px;
+      font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase;
+      background: var(--accent); color: var(--on-accent); padding: 3px 9px; border-radius: 999px;
+    }
+    .prefer { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-weight: 500; color: var(--muted); }
+
+    .pending-banner {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+      background: var(--surface-2); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 24px;
+    }
+    .pending-banner strong { font-family: var(--font-display); font-size: 1.05rem; }
+
+    .panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 16px; }
+    .panel-head h2 { margin: 0; }
+
+    .dropzone {
+      display: grid; place-items: center; gap: 8px; text-align: center;
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      padding: 36px 16px; cursor: pointer; background: var(--bg);
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .dropzone:hover, .dropzone.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+    .dropzone .big { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
+    .dropzone svg { color: var(--accent); }
+
+    .found { list-style: none; display: grid; gap: 8px; margin-top: 16px; }
+    .found li {
+      display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 8px 12px 8px 8px;
+    }
+    .found .thumb {
+      width: 52px; height: 52px; border-radius: 10px; object-fit: cover;
+      display: grid; place-items: center; background: var(--surface-2); color: var(--accent);
+      font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500;
+    }
+    .found .info { min-width: 0; }
+    .found .info b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .found .info span { display: block; color: var(--muted); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .platforms { display: flex; flex-wrap: wrap; gap: 8px; }
+    .steps-list { padding-left: 20px; display: grid; gap: 4px; color: var(--text); }
+    .steps-list li::marker { color: var(--accent); font-family: var(--font-mono); }
+    .methods { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .method { border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: grid; gap: 12px; align-content: start; background: var(--bg); min-width: 0; }
+    .method h3 { font-size: 1.05rem; }
+    .method.soon { opacity: 0.75; }
+    .collections { display: grid; gap: 6px; }
+
+    @media (max-width: 820px) {
+      .modes, .methods { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="pages" aria-label="Pages cuisine">
+    <div class="container">
+      <a href="index.html" class="logo">
+        <span class="logo-mark" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><path d="M6 17h12"/></svg>
+        </span>
+        Mon App Cuisine
+      </a>
+      <a href="recettes.html">Enregistrer</a>
+      <a href="importer.html" aria-current="page">Importer</a>
+      <a href="validation.html">À valider</a>
+      <a href="menus.html">Menus de la semaine</a>
+      <a href="catalogue.html">Toutes mes recettes</a>
+      <a href="historique.html">Historique</a>
+    </div>
+  </nav>
+
+  <header class="container">
+    <h1>Importer des <span>recettes</span></h1>
+    <p>Choisis d'où viennent tes recettes. Elles passent d'abord par l'étape de validation, où tu précises la saison et le repas, avant d'entrer dans ta base.</p>
+  </header>
+
+  <main class="container">
+    <div class="pending-banner" id="pending-banner" hidden>
+      <span><strong id="pending-count"></strong> <span class="meta">attendent ta validation.</span></span>
+      <a class="btn primary" href="validation.html">Valider les recettes</a>
+    </div>
+
+    <section>
+      <h2>Comment veux-tu importer ?</h2>
+      <div class="modes" role="group" aria-label="Mode d'import">
+        <button type="button" class="mode" data-mode="fichier" aria-pressed="false">
+          <span class="mode-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3"/></svg>
+          </span>
+          <h3>Un fichier</h3>
+          <p>Une photo de livre ou de fiche, ou un document écrit.</p>
+          <span class="examples">JPG · PNG · HEIC · PDF · TXT · DOCX</span>
+        </button>
+        <button type="button" class="mode" data-mode="lien" aria-pressed="false">
+          <span class="mode-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </span>
+          <h3>Un ou plusieurs liens</h3>
+          <p>Une page de site de cuisine ou une publication de réseau social.</p>
+          <span class="examples">Marmiton · Instagram · TikTok · YouTube</span>
+        </button>
+        <button type="button" class="mode" data-mode="compte" aria-pressed="false">
+          <span class="mode-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z"/></svg>
+          </span>
+          <h3>Un compte de réseau social</h3>
+          <p>Toutes tes publications enregistrées, ou une seule collection.</p>
+          <span class="examples">Import en masse</span>
+        </button>
+      </div>
+      <label class="prefer"><input type="checkbox" id="prefer"> Ouvrir ce mode en premier la prochaine fois</label>
+    </section>
+
+    <!-- Mode : fichier -->
+    <section class="panel" id="panel-fichier" hidden>
+      <div class="panel-head">
+        <h2>Importer un fichier</h2>
+        <span class="meta">Plusieurs fichiers à la fois, c'est possible.</span>
+      </div>
+      <label class="dropzone" id="dropzone" for="file-input">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></svg>
+        <span class="big">Dépose tes fichiers ici</span>
+        <span class="meta">ou clique pour les choisir · sur téléphone, tu peux prendre une photo</span>
+      </label>
+      <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md,.doc,.docx,text/plain" hidden>
+      <p class="meta" style="margin-top: 12px;">Les fichiers texte sont lus automatiquement. Pour les photos, les PDF et les documents Word, la recette est créée avec le fichier joint et tu complètes le contenu à la validation.</p>
+      <ul class="found" id="file-list"></ul>
+      <div class="actions" style="margin-top: 16px;">
+        <button type="button" class="btn" id="file-clear" hidden>Tout retirer</button>
+        <button type="button" class="btn primary" id="file-send" disabled>Envoyer à la validation</button>
+      </div>
+    </section>
+
+    <!-- Mode : liens -->
+    <section class="panel" id="panel-lien" hidden>
+      <div class="panel-head">
+        <h2>Importer depuis des liens</h2>
+        <span class="meta">Un lien par ligne.</span>
+      </div>
+      <label for="links">Liens vers des recettes
+        <textarea id="links" placeholder="https://www.marmiton.org/recettes/recette_tarte-tatin_12345.aspx&#10;https://www.instagram.com/reel/C8abc123/"></textarea>
+      </label>
+      <p class="meta" style="margin-top: 12px;">Le site de chaque lien est reconnu et un nom de recette est proposé quand l'adresse le permet. Le contenu de la page n'est pas encore récupéré automatiquement : tu le complètes à la validation.</p>
+      <ul class="found" id="link-list"></ul>
+      <div class="actions" style="margin-top: 16px;">
+        <button type="button" class="btn primary" id="link-send" disabled>Envoyer à la validation</button>
+      </div>
+    </section>
+
+    <!-- Mode : compte de réseau social -->
+    <section class="panel" id="panel-compte" hidden>
+      <div class="panel-head">
+        <h2>Rattacher un compte</h2>
+        <span class="meta">Pour importer en masse tes recettes enregistrées.</span>
+      </div>
+      <div style="display: grid; gap: 18px;">
+        <fieldset>
+          <legend>Réseau social</legend>
+          <div class="platforms" id="platforms"></div>
+        </fieldset>
+        <fieldset>
+          <legend>Que veux-tu importer ?</legend>
+          <div class="checks">
+            <label><input type="radio" name="scope" value="tout" checked> Tout le compte</label>
+            <label><input type="radio" name="scope" value="collection"> Une seule collection</label>
+          </div>
+        </fieldset>
+        <label id="collection-field" hidden><span>Nom de la collection <small>tel qu'il apparaît dans l'application</small></span>
+          <input id="collection-name" maxlength="80" placeholder="Ex. Recettes à tester">
+        </label>
+
+        <div class="methods">
+          <div class="method">
+            <h3>Avec l'export de mes données</h3>
+            <p class="meta" id="export-intro"></p>
+            <ol class="steps-list" id="export-steps"></ol>
+            <button type="button" class="btn primary" id="export-pick">Choisir le fichier exporté</button>
+            <input type="file" id="export-file" accept=".json,.html,.htm,.csv,application/json,text/html,text/csv" hidden>
+          </div>
+          <div class="method soon">
+            <h3>Connexion directe <span class="tag">Bientôt</span></h3>
+            <p class="meta">Se connecter au compte pour récupérer les publications sans passer par un fichier. Cette option demande un serveur pour l'application, qui n'existe pas encore.</p>
+            <button type="button" class="btn" id="connect" disabled></button>
+          </div>
+        </div>
+
+        <div id="export-result" hidden>
+          <div id="export-notice"></div>
+          <div class="collections" id="export-collections"></div>
+          <div class="actions" style="margin-top: 16px;">
+            <button type="button" class="btn primary" id="export-send" disabled>Envoyer à la validation</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <p class="meta" style="margin-top: 8px;">Tu préfères écrire la recette toi-même ? <a href="recettes.html">Saisie manuelle →</a></p>
+  </main>
+
+  <footer>
+    <div class="container">© Mon App Cuisine · Fait avec soin, et un peu de beurre.</div>
+  </footer>
+
+  <script src="cuisine.js"></script>
+  <script>
+    const { el, plural } = Cuisine;
+    const $ = id => document.getElementById(id);
+
+    // ---- Recettes déjà en attente ----
+    function renderPending() {
+      const n = Cuisine.getPending().length;
+      $('pending-banner').hidden = !n;
+      $('pending-count').textContent = plural(n, 'recette');
+    }
+
+    // ---- Choix du mode ----
+    const modes = [...document.querySelectorAll('.mode')];
+    let current = '';
+    function selectMode(mode) {
+      current = mode;
+      modes.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+      ['fichier', 'lien', 'compte'].forEach(m => { $('panel-' + m).hidden = m !== mode; });
+      $('prefer').checked = Cuisine.getImportMode() === mode;
+    }
+    function renderFavorite() {
+      const fav = Cuisine.getImportMode();
+      modes.forEach(b => {
+        b.querySelector('.fav')?.remove();
+        if (b.dataset.mode === fav) b.append(el('span', { className: 'fav', textContent: 'Préféré' }));
+      });
+    }
+    modes.forEach(b => b.addEventListener('click', () => {
+      selectMode(b.dataset.mode);
+      $('panel-' + b.dataset.mode).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+    $('prefer').addEventListener('change', e => {
+      if (!current) { e.target.checked = false; return; }
+      Cuisine.saveImportMode(e.target.checked ? current : '');
+      renderFavorite();
+    });
+
+    function sendToValidation(items) {
+      if (!items.length || !Cuisine.addPending(items)) return;
+      location.href = 'validation.html';
+    }
+
+    // ---- Mode fichier ----
+    let files = [];
+    const kindOf = f => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name) ? 'photo'
+      : /\.(txt|md)$/i.test(f.name) || f.type === 'text/plain' ? 'texte'
+      : /\.pdf$/i.test(f.name) ? 'pdf' : 'document';
+    const nameOf = f => f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
+
+    async function addFiles(list) {
+      for (const f of list) {
+        const kind = kindOf(f);
+        const item = { origin: 'fichier', fileName: f.name, platform: kind, recipe: { title: nameOf(f) } };
+        if (kind === 'texte') {
+          item.recipe = Cuisine.parseRecipeText(await f.text());
+          item.note = 'Texte lu automatiquement : vérifie les ingrédients et les étapes.';
+        } else if (kind === 'photo') {
+          item.preview = await Cuisine.shrinkImage(f);
+          item.note = 'Photo jointe : recopie les ingrédients et les étapes en t\'aidant de l\'image.';
+        } else {
+          item.note = 'Document joint (' + kind.toUpperCase() + ') : la lecture automatique arrivera plus tard, complète la recette à la main.';
+        }
+        files.push(item);
+      }
+      renderFiles();
+    }
+    function renderFiles() {
+      $('file-list').replaceChildren(...files.map((it, i) => el('li', {}, [
+        it.preview ? el('img', { className: 'thumb', src: it.preview, alt: '' }) : el('span', { className: 'thumb', textContent: it.platform.toUpperCase().slice(0, 4) }),
+        el('div', { className: 'info' }, [
+          el('b', { textContent: it.recipe.title || it.fileName }),
+          el('span', { textContent: it.fileName + (it.platform === 'texte' ? ' · ' + plural(it.recipe.ingredients.length, 'ingrédient') + ', ' + plural(it.recipe.steps.length, 'étape') : '') })
+        ]),
+        el('button', { type: 'button', className: 'btn small', textContent: 'Retirer', onclick: () => { files.splice(i, 1); renderFiles(); } })
+      ])));
+      $('file-send').disabled = !files.length;
+      $('file-send').textContent = files.length ? 'Envoyer ' + plural(files.length, 'recette') + ' à la validation' : 'Envoyer à la validation';
+      $('file-clear').hidden = !files.length;
+    }
+    $('file-input').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });
+    const dz = $('dropzone');
+    ['dragenter', 'dragover'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.remove('over'); }));
+    dz.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
+    $('file-clear').addEventListener('click', () => { files = []; renderFiles(); });
+    $('file-send').addEventListener('click', () => sendToValidation(files));
+
+    // ---- Mode liens ----
+    let links = [];
+    function readLinks() {
+      const seen = new Set();
+      links = ($('links').value.match(/https?:\/\/[^\s"'<>]+/g) || [])
+        .filter(u => !seen.has(u) && seen.add(u))
+        .map(url => {
+          const platform = Cuisine.platformOf(url);
+          return {
+            origin: 'lien', platform,
+            recipe: { title: platform === 'site' ? Cuisine.titleFromUrl(url) : '', source: url },
+            note: platform === 'site'
+              ? 'Lien vers ' + Cuisine.platformLabel(platform, url) + ' : ouvre la page pour recopier les ingrédients et les étapes.'
+              : 'Publication ' + Cuisine.platformLabel(platform, url) + ' : ouvre-la pour donner un nom à la recette et la compléter.'
+          };
+        });
+      $('link-list').replaceChildren(...links.map(it => el('li', {}, [
+        el('span', { className: 'thumb', textContent: Cuisine.platformLabel(it.platform, it.recipe.source).slice(0, 4).toUpperCase() }),
+        el('div', { className: 'info' }, [
+          el('b', { textContent: it.recipe.title || 'Nom à compléter' }),
+          el('span', { textContent: it.recipe.source })
+        ]),
+        el('span', { className: 'tag', textContent: Cuisine.platformLabel(it.platform, it.recipe.source) })
+      ])));
+      $('link-send').disabled = !links.length;
+      $('link-send').textContent = links.length ? 'Envoyer ' + plural(links.length, 'lien') + ' à la validation' : 'Envoyer à la validation';
+    }
+    $('links').addEventListener('input', readLinks);
+    $('link-send').addEventListener('click', () => sendToValidation(links));
+
+    // ---- Mode compte ----
+    // Les menus des applications changent souvent : ces étapes sont indicatives.
+    const EXPORTS = {
+      instagram: {
+        intro: 'Instagram ne donne pas accès aux publications enregistrées par connexion. On passe par l\'export de tes informations, qui contient tes collections.',
+        steps: ['Profil → menu ☰ → Espace Comptes.', 'Vos informations et autorisations → Télécharger vos informations.', 'Choisis « Certaines de vos informations » → Enregistrés.', 'Format JSON, puis télécharge le fichier reçu.', 'Dans le dossier, prends saved_collections.json (collections) ou saved_posts.json (tout).']
+      },
+      tiktok: {
+        intro: 'Les vidéos mises en favori se trouvent dans l\'export de données TikTok.',
+        steps: ['Profil → menu ☰ → Paramètres et confidentialité.', 'Compte → Télécharger vos données.', 'Choisis le format JSON et demande les données.', 'Quand le fichier est prêt, télécharge-le et choisis user_data_tiktok.json.']
+      },
+      pinterest: {
+        intro: 'Tes épingles et tableaux se trouvent dans l\'export de données Pinterest.',
+        steps: ['Paramètres → Confidentialité et données.', 'Demander vos données, puis ouvre l\'e-mail reçu.', 'Télécharge l\'archive et choisis le fichier qui liste tes épingles.']
+      },
+      facebook: {
+        intro: 'Les éléments enregistrés et leurs collections se trouvent dans l\'export Facebook.',
+        steps: ['Menu → Paramètres et confidentialité → Paramètres.', 'Espace Comptes → Télécharger vos informations.', 'Choisis « Éléments enregistrés et collections », format JSON.', 'Dans l\'archive, prends le fichier des éléments enregistrés.']
+      },
+      youtube: {
+        intro: 'Tes playlists YouTube s\'exportent avec Google Takeout.',
+        steps: ['Va sur takeout.google.com.', 'Ne coche que « YouTube et YouTube Music », puis « Playlists ».', 'Crée l\'export, télécharge l\'archive.', 'Choisis le fichier CSV de la playlist qui contient tes recettes.']
+      }
+    };
+    let platform = 'instagram';
+    let exportFound = [];
+    const platformButtons = Object.entries(Cuisine.PLATFORMS).map(([key, p]) => {
+      const b = el('button', { type: 'button', className: 'chip', textContent: p.label });
+      b.addEventListener('click', () => { platform = key; renderPlatform(); });
+      b.dataset.key = key;
+      return b;
+    });
+    $('platforms').append(...platformButtons);
+    function renderPlatform() {
+      platformButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.key === platform)));
+      $('export-intro').textContent = EXPORTS[platform].intro;
+      $('export-steps').replaceChildren(...EXPORTS[platform].steps.map(s => el('li', { textContent: s })));
+      $('connect').textContent = 'Se connecter à ' + Cuisine.PLATFORMS[platform].label;
+      $('export-result').hidden = true;
+      exportFound = [];
+    }
+    document.querySelectorAll('input[name="scope"]').forEach(r => r.addEventListener('change', () => {
+      $('collection-field').hidden = document.querySelector('input[name="scope"]:checked').value !== 'collection';
+      if (exportFound.length) renderExport();
+    }));
+    $('collection-name').addEventListener('input', () => { if (exportFound.length) renderExport(); });
+
+    $('export-pick').addEventListener('click', () => $('export-file').click());
+    $('export-file').addEventListener('change', async e => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      const text = await f.text();
+      exportFound = Cuisine.parseSocialExport(text, platform);
+      // Les CSV de playlists YouTube ne contiennent que l'identifiant des vidéos.
+      if (!exportFound.length && platform === 'youtube') {
+        exportFound = (text.match(/^[\w-]{11}(?=,)/gm) || []).map(id => ({ url: 'https://www.youtube.com/watch?v=' + id, collection: f.name.replace(/\.csv$/i, '') }));
+      }
+      renderExport();
+    });
+
+    let chosenCollections = new Set();
+    function renderExport() {
+      const box = $('export-collections');
+      const notice = $('export-notice');
+      $('export-result').hidden = false;
+      box.replaceChildren();
+      const label = Cuisine.PLATFORMS[platform].label;
+      if (!exportFound.length) {
+        notice.replaceChildren(el('p', { className: 'notice warn', textContent: 'Aucune publication ' + label + ' trouvée dans ce fichier. Vérifie que c\'est bien le fichier des éléments enregistrés et que le bon réseau est choisi.' }));
+        $('export-send').disabled = true;
+        return;
+      }
+      const groups = {};
+      exportFound.forEach(f => { const k = f.collection || 'Sans collection'; groups[k] = (groups[k] || 0) + 1; });
+      const names = Object.keys(groups);
+      const wantCollection = document.querySelector('input[name="scope"]:checked').value === 'collection';
+      const typed = Cuisine.normalize($('collection-name').value.trim());
+      chosenCollections = new Set(!wantCollection ? names
+        : names.filter(n => typed && Cuisine.normalize(n).includes(typed)));
+      notice.replaceChildren(el('p', { className: 'notice ok', textContent: plural(exportFound.length, 'publication') + ' ' + label + ' trouvée' + (exportFound.length > 1 ? 's' : '') + ' dans ' + plural(names.length, 'collection') + '.' }));
+      if (names.length > 1 || wantCollection) {
+        box.append(el('p', { className: 'meta', textContent: 'Collections à importer :' }));
+        const checks = el('div', { className: 'checks' });
+        names.forEach(n => {
+          const cb = el('input', { type: 'checkbox', checked: chosenCollections.has(n) });
+          cb.addEventListener('change', () => { cb.checked ? chosenCollections.add(n) : chosenCollections.delete(n); updateExportButton(); });
+          checks.append(el('label', {}, [cb, n + ' ', el('small', { textContent: '(' + groups[n] + ')' })]));
+        });
+        box.append(checks);
+      }
+      updateExportButton();
+    }
+    function selectedExport() {
+      return exportFound.filter(f => chosenCollections.has(f.collection || 'Sans collection'));
+    }
+    function updateExportButton() {
+      const n = selectedExport().length;
+      $('export-send').disabled = !n;
+      $('export-send').textContent = n ? 'Envoyer ' + plural(n, 'publication') + ' à la validation' : 'Choisis au moins une collection';
+    }
+    $('export-send').addEventListener('click', () => {
+      const label = Cuisine.PLATFORMS[platform].label;
+      sendToValidation(selectedExport().map(f => ({
+        origin: 'compte', platform, collection: f.collection,
+        recipe: { source: f.url },
+        note: 'Publication ' + label + (f.collection ? ' de la collection « ' + f.collection + ' »' : '') + ' : ouvre-la pour nommer et compléter la recette.'
+      })));
+    });
+
+    // ---- Démarrage : le mode préféré s'ouvre directement ----
+    renderPending();
+    renderPlatform();
+    renderFavorite();
+    if (Cuisine.getImportMode()) selectMode(Cuisine.getImportMode());
+  </script>
+</body>
+</html>
