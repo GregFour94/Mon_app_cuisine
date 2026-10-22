@@ -97,6 +97,10 @@ const Cuisine = (() => {
   }
 
   // Repas : aucune case cochée = la recette convient au midi comme au soir.
+  function fitsMeal(recipe, meal) {
+    return !recipe.meals || !recipe.meals.length || recipe.meals.includes(meal);
+  }
+
   function mealsLabel(recipe) {
     return recipe.meals && recipe.meals.length === 1 ? MEALS[recipe.meals[0]] : 'Midi et soir';
   }
@@ -316,7 +320,7 @@ const Cuisine = (() => {
     getRecipes, saveRecipes, getHistory, saveHistory, getDraft, saveDraft,
     getPending, savePending, addPending, pendingMissing, getImportMode, saveImportMode,
     platformOf, platformLabel, titleFromUrl, parseRecipeText, parseSocialExport, shrinkImage,
-    seasonOf, fitsSeason, seasonsLabel, mealsLabel, totalTime, nextMonday, isoDate, parseIsoDate, formatDate,
+    seasonOf, fitsSeason, fitsMeal, seasonsLabel, mealsLabel, totalTime, nextMonday, isoDate, parseIsoDate, formatDate,
     plural, el, recipeDetail
   };
 })();
