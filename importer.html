@@ -78,6 +78,9 @@
     .method h3 { font-size: 1.05rem; }
     .method.soon { opacity: 0.75; }
     .collections { display: grid; gap: 6px; }
+    .server-status { margin-top: 12px; font-size: 0.9rem; color: var(--muted); }
+    .server-status .ok-dot { color: var(--ok); font-weight: 600; }
+    .server-status .ok-dot::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 8px; vertical-align: middle; }
 
     @media (max-width: 820px) {
       .modes, .methods { grid-template-columns: 1fr; }
@@ -173,7 +176,7 @@
       <label for="links">Liens vers des recettes
         <textarea id="links" placeholder="https://www.marmiton.org/recettes/recette_tarte-tatin_12345.aspx&#10;https://www.instagram.com/reel/C8abc123/"></textarea>
       </label>
-      <p class="meta" style="margin-top: 12px;">Le site de chaque lien est reconnu et un nom de recette est proposé quand l'adresse le permet. Le contenu de la page n'est pas encore récupéré automatiquement : tu le complètes à la validation.</p>
+      <p class="server-status" id="link-server"></p>
       <ul class="found" id="link-list"></ul>
       <div class="actions" style="margin-top: 16px;">
         <button type="button" class="btn primary" id="link-send" disabled>Envoyer à la validation</button>
@@ -212,7 +215,7 @@
           </div>
           <div class="method soon">
             <h3>Connexion directe <span class="tag">Bientôt</span></h3>
-            <p class="meta">Se connecter au compte pour récupérer les publications sans passer par un fichier. Cette option demande un serveur pour l'application, qui n'existe pas encore.</p>
+            <p class="meta">Se connecter au compte pour récupérer les publications sans passer par un fichier. Chaque réseau doit d'abord autoriser l'application (compte développeur validé), et Instagram ne donne pas accès aux publications enregistrées par ce moyen.</p>
             <button type="button" class="btn" id="connect" disabled></button>
           </div>
         </div>
@@ -220,6 +223,7 @@
         <div id="export-result" hidden>
           <div id="export-notice"></div>
           <div class="collections" id="export-collections"></div>
+          <label class="prefer" id="export-fetch-field" hidden><input type="checkbox" id="export-fetch" checked> Récupérer automatiquement le texte et la photo de chaque publication</label>
           <div class="actions" style="margin-top: 16px;">
             <button type="button" class="btn primary" id="export-send" disabled>Envoyer à la validation</button>
           </div>
@@ -272,8 +276,27 @@
       renderFavorite();
     });
 
-    function sendToValidation(items) {
-      if (!items.length || !Cuisine.addPending(items)) return;
+    // Récupération automatique des liens : seulement quand le site tourne avec son serveur.
+    let server = false;
+    Cuisine.serverAvailable().then(ok => {
+      server = ok;
+      $('link-server').replaceChildren(ok
+        ? el('span', { className: 'ok-dot', textContent: 'Récupération automatique activée : ingrédients, étapes et photo sont lus sur le site ou la publication.' })
+        : el('span', { textContent: 'Récupération automatique indisponible ici (le serveur du site ne répond pas) : le site du lien est reconnu, et tu complètes la recette à la validation.' }));
+      $('export-fetch-field').hidden = !ok;
+    });
+
+    // Ajoute les recettes à la file d'attente, récupère leur contenu si demandé, puis ouvre la validation.
+    async function sendToValidation(items, button, fetchContent = false) {
+      if (!items.length) return;
+      button.disabled = true;
+      const added = await Cuisine.addPending(items);
+      if (!added) { button.disabled = false; return; }
+      if (fetchContent && server) {
+        const ids = added.filter(p => p.recipe.source).map(p => p.id);
+        button.textContent = 'Récupération 0 / ' + ids.length + '…';
+        await Cuisine.fillPendingMany(ids, (done, total) => { button.textContent = 'Récupération ' + done + ' / ' + total + '…'; });
+      }
       location.href = 'validation.html';
     }
 
@@ -292,7 +315,7 @@
           item.recipe = Cuisine.parseRecipeText(await f.text());
           item.note = 'Texte lu automatiquement : vérifie les ingrédients et les étapes.';
         } else if (kind === 'photo') {
-          item.preview = await Cuisine.shrinkImage(f);
+          item.image = await Cuisine.shrinkImage(f);
           item.note = 'Photo jointe : recopie les ingrédients et les étapes en t\'aidant de l\'image.';
         } else {
           item.note = 'Document joint (' + kind.toUpperCase() + ') : la lecture automatique arrivera plus tard, complète la recette à la main.';
@@ -303,7 +326,7 @@
     }
     function renderFiles() {
       $('file-list').replaceChildren(...files.map((it, i) => el('li', {}, [
-        it.preview ? el('img', { className: 'thumb', src: it.preview, alt: '' }) : el('span', { className: 'thumb', textContent: it.platform.toUpperCase().slice(0, 4) }),
+        it.image ? el('img', { className: 'thumb', src: it.image, alt: '' }) : el('span', { className: 'thumb', textContent: it.platform.toUpperCase().slice(0, 4) }),
         el('div', { className: 'info' }, [
           el('b', { textContent: it.recipe.title || it.fileName }),
           el('span', { textContent: it.fileName + (it.platform === 'texte' ? ' · ' + plural(it.recipe.ingredients.length, 'ingrédient') + ', ' + plural(it.recipe.steps.length, 'étape') : '') })
@@ -320,7 +343,7 @@
     ['dragleave', 'drop'].forEach(t => dz.addEventListener(t, e => { e.preventDefault(); dz.classList.remove('over'); }));
     dz.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
     $('file-clear').addEventListener('click', () => { files = []; renderFiles(); });
-    $('file-send').addEventListener('click', () => sendToValidation(files));
+    $('file-send').addEventListener('click', e => sendToValidation(files, e.currentTarget));
 
     // ---- Mode liens ----
     let links = [];
@@ -350,7 +373,7 @@
       $('link-send').textContent = links.length ? 'Envoyer ' + plural(links.length, 'lien') + ' à la validation' : 'Envoyer à la validation';
     }
     $('links').addEventListener('input', readLinks);
-    $('link-send').addEventListener('click', () => sendToValidation(links));
+    $('link-send').addEventListener('click', e => sendToValidation(links, e.currentTarget, true));
 
     // ---- Mode compte ----
     // Les menus des applications changent souvent : ces étapes sont indicatives.
@@ -453,13 +476,13 @@
       $('export-send').disabled = !n;
       $('export-send').textContent = n ? 'Envoyer ' + plural(n, 'publication') + ' à la validation' : 'Choisis au moins une collection';
     }
-    $('export-send').addEventListener('click', () => {
+    $('export-send').addEventListener('click', e => {
       const label = Cuisine.PLATFORMS[platform].label;
       sendToValidation(selectedExport().map(f => ({
         origin: 'compte', platform, collection: f.collection,
-        recipe: { source: f.url },
+        recipe: { source: f.url, sourceAuthor: f.author ? '@' + f.author.replace(/^@/, '') : '' },
         note: 'Publication ' + label + (f.collection ? ' de la collection « ' + f.collection + ' »' : '') + ' : ouvre-la pour nommer et compléter la recette.'
-      })));
+      })), e.currentTarget, $('export-fetch').checked);
     });
 
     // ---- Démarrage : le mode préféré s'ouvre directement ----

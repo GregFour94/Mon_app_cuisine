@@ -8,6 +8,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
   <link rel="stylesheet" href="cuisine.css">
+  <style>
+    .photo-field { display: grid; gap: 10px; }
+    #photo-preview { width: 220px; max-width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 14px; border: 1px solid var(--border); }
+  </style>
 </head>
 <body>
   <nav class="pages" aria-label="Pages cuisine">
@@ -68,9 +72,25 @@
           <label>Étapes <small>une par ligne</small>
             <textarea name="steps" placeholder="Mélanger la farine et les œufs.&#10;Ajouter le lait petit à petit."></textarea>
           </label>
-          <label>Source <small>lien ou livre (facultatif)</small>
-            <input name="source" maxlength="300">
-          </label>
+          <div class="row">
+            <label><span>Source <small>lien ou livre (facultatif)</small></span>
+              <input name="source" maxlength="300">
+            </label>
+            <label><span>Auteur <small>(facultatif)</small></span>
+              <input name="sourceAuthor" maxlength="120" placeholder="Ex. @chef.maison">
+            </label>
+          </div>
+          <fieldset>
+            <legend>Photo <small>(facultatif)</small></legend>
+            <div class="photo-field">
+              <img id="photo-preview" alt="Photo de la recette" hidden>
+              <div class="actions" style="justify-content: flex-start;">
+                <label class="btn" for="photo-input" id="photo-pick">Ajouter une photo</label>
+                <button type="button" class="btn danger" id="photo-remove" hidden>Retirer la photo</button>
+              </div>
+              <input type="file" id="photo-input" accept="image/*" hidden>
+            </div>
+          </fieldset>
           <label>Pourquoi je la garde / notes <small>(facultatif)</small>
             <textarea name="notes" style="min-height: 70px;"></textarea>
           </label>
@@ -139,13 +159,41 @@
       fields.cook.value = editing.cook;
       seasonBoxes.forEach(b => { b.checked = editing.seasons.includes(b.value); });
       mealBoxes.forEach(b => { b.checked = editing.meals.includes(b.value); });
-      fields.ingredients.value = editing.ingredients.join('\n');
+      fields.ingredients.value = Cuisine.ingredientTexts(editing).join('\n');
       fields.steps.value = editing.steps.join('\n');
       fields.source.value = editing.source;
+      fields.sourceAuthor.value = editing.sourceAuthor;
+      if (editing.image) Cuisine.images.get(editing.id).then(data => { if (data) setPhoto(data); });
       fields.notes.value = editing.notes;
     }
 
-    form.addEventListener('submit', e => {
+    // ---- Photo : réduite puis rangée dans le navigateur, sous l'identifiant de la recette ----
+    let photo = '';
+    let photoChanged = false;
+    function setPhoto(data) {
+      photo = data;
+      const img = document.getElementById('photo-preview');
+      img.hidden = !data;
+      if (data) img.src = data; else img.removeAttribute('src');
+      document.getElementById('photo-remove').hidden = !data;
+      document.getElementById('photo-pick').textContent = data ? 'Changer la photo' : 'Ajouter une photo';
+    }
+    document.getElementById('photo-input').addEventListener('change', async e => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      setPhoto(await Cuisine.shrinkImage(file));
+      photoChanged = true;
+    });
+    document.getElementById('photo-remove').addEventListener('click', () => { setPhoto(''); photoChanged = true; });
+    async function savePhoto(id) {
+      if (!photoChanged) return;
+      if (photo) await Cuisine.images.put(id, photo);
+      else await Cuisine.images.remove(id);
+      photoChanged = false;
+    }
+
+    form.addEventListener('submit', async e => {
       e.preventDefault();
       const data = Cuisine.cleanRecipe({
         title: fields.title.value,
@@ -158,19 +206,26 @@
         ingredients: fields.ingredients.value,
         steps: fields.steps.value,
         source: fields.source.value.trim(),
-        notes: fields.notes.value.trim()
+        sourceAuthor: fields.sourceAuthor.value.trim(),
+        notes: fields.notes.value.trim(),
+        image: Boolean(photo)
       });
       const recipes = Cuisine.getRecipes();
       if (editing) {
         const i = recipes.findIndex(r => r.id === editing.id);
-        recipes[i] = { ...data, id: editing.id, createdAt: editing.createdAt, updatedAt: new Date().toISOString() };
-        if (Cuisine.saveRecipes(recipes)) location.href = 'catalogue.html';
+        recipes[i] = { ...data, id: editing.id, createdAt: editing.createdAt, updatedAt: new Date().toISOString(),
+          sourcePlatform: editing.sourcePlatform, importedAt: editing.importedAt };
+        if (!Cuisine.saveRecipes(recipes)) return;
+        await savePhoto(editing.id);
+        location.href = 'catalogue.html';
         return;
       }
       const duplicate = recipes.some(r => Cuisine.normalize(r.title) === Cuisine.normalize(data.title));
       if (duplicate && !confirm('Une recette « ' + data.title + ' » existe déjà. L\'enregistrer quand même ?')) return;
       recipes.push(data);
       if (!Cuisine.saveRecipes(recipes)) return;
+      await savePhoto(data.id);
+      setPhoto('');
       showNotice('ok', ['« ' + data.title + ' » est enregistrée dans ta base. ', el('a', { href: 'catalogue.html', textContent: 'Voir toutes mes recettes' })]);
       form.reset();
       fields.category.value = 'Plat';

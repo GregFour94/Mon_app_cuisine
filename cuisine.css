@@ -240,6 +240,8 @@ legend { font-size: 0.9rem; font-weight: 600; margin-bottom: 6px; }
 button.card { cursor: pointer; }
 button.card:hover { transform: translateY(-5px); box-shadow: var(--shadow); border-color: var(--accent); }
 .card h3 { font-size: 1.1rem; font-weight: 700; }
+.card.with-photo { padding-top: 10px; }
+.card-photo { width: 100%; max-width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border-radius: 12px; margin-bottom: 4px; }
 .meta { color: var(--muted); font-size: 0.88rem; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .tag {
@@ -272,6 +274,12 @@ dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(4px); }
 .detail li { margin-bottom: 4px; }
 .detail .notes { white-space: pre-wrap; color: var(--muted); }
 dialog .actions { margin-top: 22px; }
+.detail-photo { width: 100%; max-width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 16px; margin-bottom: 14px; }
+.detail .portions { display: flex; align-items: center; gap: 8px; margin: -2px 0 8px; color: var(--muted); font-size: 0.92rem; }
+.detail .portions b { min-width: 2ch; text-align: center; color: var(--text); font-variant-numeric: tabular-nums; }
+.detail .portions .btn.small { width: 30px; padding: 3px 0; text-align: center; }
+.detail .ingredients b { font-family: var(--font-mono); font-weight: 500; color: var(--accent); font-variant-numeric: tabular-nums; }
+.detail .source-link { overflow-wrap: anywhere; }
 
 footer {
   border-top: 1px solid var(--border); padding-block: 28px;

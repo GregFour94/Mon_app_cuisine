@@ -44,6 +44,103 @@ const Cuisine = (() => {
       .replace(/œ/g, 'oe').replace(/æ/g, 'ae');
   }
 
+  // ---- Ingrédients découpés : { text, quantity, unit, name } ----
+  // text garde la ligne telle qu'elle a été écrite ; quantity est un nombre (ou null),
+  // unit une unité normalisée (ou '') et name le reste (« farine », « huile d'olive »).
+  const NUMBER_WORDS = { un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10, onze: 11, douze: 12, demi: 0.5, 'demie': 0.5 };
+  const FRACTIONS = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3, '⅛': 0.125 };
+  // [unité affichée, expression qui la reconnaît]
+  const UNITS = [
+    ['kg', /^(kg|kilos?|kilogrammes?)\b/i],
+    ['mg', /^mg\b/i],
+    ['g', /^(g|gr|grammes?)\b\.?/i],
+    ['cl', /^cl\b/i],
+    ['ml', /^ml\b/i],
+    ['dl', /^dl\b/i],
+    ['l', /^(l|litres?)\b/i],
+    ['c. à soupe', /^(c\.?\s*à\s*s(oupe)?\.?|c\.?\s*a\s*s(oupe)?\.?|càs|cas|cs|cuil(l[eè]re)?s?\.?\s*à\s*soupe|cuillères?\s+à\s+soupe)(?=\s|$|\b)/i],
+    ['c. à café', /^(c\.?\s*à\s*c(afé)?\.?|c\.?\s*a\s*c(afe)?\.?|càc|cac|cc|cuil(l[eè]re)?s?\.?\s*à\s*café|cuillères?\s+à\s+café)(?=\s|$|\b)/i],
+    ['pincée', /^pincées?\b/i], ['sachet', /^sachets?\b/i], ['tranche', /^tranches?\b/i],
+    ['gousse', /^gousses?\b/i], ['boîte', /^bo[iî]tes?\b/i], ['pot', /^pots?\b/i],
+    ['verre', /^verres?\b/i], ['bol', /^bols?\b/i], ['botte', /^bottes?\b/i],
+    ['brin', /^brins?\b/i], ['feuille', /^feuilles?\b/i], ['tasse', /^tasses?\b/i],
+    ['poignée', /^poignées?\b/i], ['branche', /^branches?\b/i], ['bouquet', /^bouquets?\b/i],
+    ['cube', /^cubes?\b/i], ['paquet', /^paquets?\b/i], ['rouleau', /^rouleaux?\b/i],
+    ['barquette', /^barquettes?\b/i], ['filet', /^filets?\b/i], ['noix', /^noix\b/i],
+    ['morceau', /^morceaux?\b/i], ['cuillère', /^cuill[eè]res?\b/i]
+  ];
+
+  function parseIngredient(line) {
+    const text = String(line || '').replace(/^[-•*·–]\s*/, '').trim();
+    let rest = text;
+    let quantity = null;
+    const num = rest.match(/^(\d+(?:[.,]\d+)?)(?:\s*([½¼¾⅓⅔⅛])|\s+(\d+)\/(\d+)|\/(\d+))?(?:\s*(?:-|à)\s*\d+(?:[.,]\d+)?)?\s*/);
+    if (num) {
+      quantity = parseFloat(num[1].replace(',', '.'));
+      if (num[2]) quantity += FRACTIONS[num[2]];
+      if (num[3]) quantity += Number(num[3]) / Number(num[4]);
+      if (num[5]) quantity = quantity / Number(num[5]);
+      rest = rest.slice(num[0].length);
+    } else if (FRACTIONS[rest[0]]) {
+      quantity = FRACTIONS[rest[0]];
+      rest = rest.slice(1).trim();
+    } else {
+      const word = rest.match(/^(une?\s+demie?|[a-zéè]+)\s+/i);
+      const key = word && normalize(word[1]).replace(/\s+/g, ' ');
+      if (word && (key === 'un demi' || key === 'une demie' || key === 'une demi')) { quantity = 0.5; rest = rest.slice(word[0].length); }
+      else if (word && NUMBER_WORDS[key] !== undefined) { quantity = NUMBER_WORDS[key]; rest = rest.slice(word[0].length); }
+    }
+    let unit = '';
+    if (quantity !== null) {
+      for (const [label, re] of UNITS) {
+        const m = rest.match(re);
+        if (m) { unit = label; rest = rest.slice(m[0].length).trim(); break; }
+      }
+    }
+    const name = rest.replace(/^(de\s+|d['’]\s*)/i, '').trim();
+    return { text, quantity, unit, name: name || text };
+  }
+
+  function cleanIngredient(i) {
+    if (i && typeof i === 'object') {
+      const parsed = parseIngredient(i.text || [i.quantity, i.unit, i.name].filter(x => x !== null && x !== undefined && x !== '').join(' '));
+      return {
+        text: parsed.text,
+        quantity: typeof i.quantity === 'number' && isFinite(i.quantity) ? i.quantity : parsed.quantity,
+        unit: typeof i.unit === 'string' ? i.unit : parsed.unit,
+        name: i.name ? String(i.name) : parsed.name
+      };
+    }
+    return parseIngredient(i);
+  }
+
+  const ingredientTexts = recipe => recipe.ingredients.map(i => i.text);
+
+  // Quantité lisible : 0,5 → ½ ; 1,25 → 1 ¼ ; 333,3 g → 335 g.
+  function formatQuantity(q, unit) {
+    if (q === null || q === undefined) return '';
+    if (['g', 'ml', 'mg'].includes(unit) && q >= 20) return String(Math.round(q / 5) * 5);
+    const whole = Math.floor(q);
+    const frac = q - whole;
+    const known = [[0.25, '¼'], [1 / 3, '⅓'], [0.5, '½'], [2 / 3, '⅔'], [0.75, '¾']].find(([v]) => Math.abs(frac - v) < 0.04);
+    if (!['kg', 'l', 'cl', 'dl'].includes(unit) && q < 20 && known) return (whole ? whole + ' ' : '') + known[1];
+    if (frac < 0.04 || frac > 0.96) return String(Math.round(q));
+    return String(Math.round(q * 10) / 10).replace('.', ',');
+  }
+
+  // Quantité affichée d'un ingrédient (avec son unité) pour factor fois la recette.
+  // Renvoie '' quand l'ingrédient n'a pas de quantité (« sel, poivre »).
+  function ingredientAmount(ing, factor = 1) {
+    if (ing.quantity === null) return '';
+    let q = ing.quantity * factor;
+    let unit = ing.unit;
+    // 1000 g → 1 kg, 100 cl → 1 l, 1000 ml → 1 l
+    const up = { g: [1000, 'kg'], ml: [1000, 'l'], cl: [100, 'l'] }[unit];
+    if (up && q >= up[0]) { q /= up[0]; unit = up[1]; }
+    if (unit && !/^(k?g|mg|c?l|ml|dl|c\. à .+|noix)$/.test(unit) && q > 1 && !/[sx]$/.test(unit)) unit += unit.endsWith('eau') ? 'x' : 's';
+    return formatQuantity(q, unit) + (unit ? ' ' + unit : '');
+  }
+
   // Remet une recette (saisie, ancienne version ou import) dans un format propre.
   function cleanRecipe(r) {
     return {
@@ -55,9 +152,14 @@ const Cuisine = (() => {
       servings: r.servings ? String(r.servings) : '',
       prep: r.prep ? String(r.prep) : '',
       cook: r.cook ? String(r.cook) : '',
-      ingredients: Array.isArray(r.ingredients) ? r.ingredients.map(String) : lines(r.ingredients),
+      ingredients: (Array.isArray(r.ingredients) ? r.ingredients : lines(r.ingredients))
+        .map(cleanIngredient).filter(i => i.text),
       steps: Array.isArray(r.steps) ? r.steps.map(String) : lines(r.steps),
       source: r.source ? String(r.source) : '',
+      sourcePlatform: r.sourcePlatform ? String(r.sourcePlatform) : '',
+      sourceAuthor: r.sourceAuthor ? String(r.sourceAuthor) : '',
+      importedAt: r.importedAt || undefined,
+      image: Boolean(r.image),
       notes: r.notes ? String(r.notes) : '',
       createdAt: r.createdAt || new Date().toISOString(),
       updatedAt: r.updatedAt || undefined
@@ -143,20 +245,51 @@ const Cuisine = (() => {
 
   // Contenu de la fiche détaillée d'une recette (pour les fenêtres de consultation).
   function recipeDetail(r) {
-    const parts = [
+    const parts = [];
+    if (r.image) {
+      const img = el('img', { className: 'detail-photo', alt: 'Photo de ' + r.title });
+      fillImage(img, r.id);
+      parts.push(img);
+    }
+    parts.push(
       el('h2', { textContent: r.title }),
       el('div', { className: 'meta', textContent: [r.category, seasonsLabel(r), mealsLabel(r), r.servings ? r.servings + ' personnes' : '',
         r.prep ? 'préparation ' + r.prep + ' min' : '', r.cook ? 'cuisson ' + r.cook + ' min' : ''].filter(Boolean).join(' · ') })
-    ];
+    );
     if (r.ingredients.length) {
-      parts.push(el('h3', { textContent: 'Ingrédients' }), el('ul', {}, r.ingredients.map(i => el('li', { textContent: i }))));
+      const base = Number(r.servings) || 0;
+      const list = el('ul', { className: 'ingredients' });
+      const renderList = people => list.replaceChildren(...r.ingredients.map(i => {
+        const amount = ingredientAmount(i, base && people ? people / base : 1);
+        const link = i.unit ? (/^[aeiouyhéèêâîôûœ]/i.test(i.name) ? " d'" : ' de ') : ' ';
+        return el('li', {}, amount ? [el('b', { textContent: amount }), link + i.name] : [i.text]);
+      }));
+      const head = [el('h3', { textContent: 'Ingrédients' })];
+      if (base && r.ingredients.some(i => i.quantity !== null)) {
+        let people = base;
+        const count = el('b', { textContent: people });
+        const step = d => () => { people = Math.max(1, people + d); count.textContent = people; renderList(people); };
+        head.push(el('div', { className: 'portions' }, [
+          'Pour ',
+          el('button', { type: 'button', className: 'btn small', textContent: '−', ariaLabel: 'Une personne de moins', onclick: step(-1) }),
+          count,
+          el('button', { type: 'button', className: 'btn small', textContent: '+', ariaLabel: 'Une personne de plus', onclick: step(1) }),
+          ' personnes'
+        ]));
+      }
+      renderList(base);
+      parts.push(...head, list);
     }
     if (r.steps.length) {
       parts.push(el('h3', { textContent: 'Étapes' }), el('ol', {}, r.steps.map(s => el('li', { textContent: s }))));
     }
-    if (r.source) {
-      parts.push(el('h3', { textContent: 'Source' }), /^https?:\/\//i.test(r.source)
-        ? el('a', { href: r.source, target: '_blank', rel: 'noopener', textContent: r.source })
+    if (r.source || r.sourceAuthor || r.sourcePlatform) {
+      const info = [r.sourcePlatform, r.sourceAuthor, r.importedAt ? 'importée le ' + formatDate(new Date(r.importedAt), { day: 'numeric', month: 'long', year: 'numeric' }) : '']
+        .filter(Boolean).join(' · ');
+      parts.push(el('h3', { textContent: 'Source' }));
+      if (info) parts.push(el('p', { className: 'meta', textContent: info }));
+      if (r.source) parts.push(/^https?:\/\//i.test(r.source)
+        ? el('a', { href: r.source, target: '_blank', rel: 'noopener', className: 'source-link', textContent: r.source })
         : el('p', { textContent: r.source }));
     }
     if (r.notes) {
@@ -174,16 +307,51 @@ const Cuisine = (() => {
   }
   const savePending = items => write(KEYS.pending, items);
 
-  function addPending(items) {
+  // La photo d'une recette en attente est rangée sous la clé « attente:<id> ».
+  const pendingImageKey = id => 'attente:' + id;
+
+  async function addPending(items) {
     const pending = getPending();
     const now = new Date().toISOString();
-    items.forEach(it => pending.push({
+    const added = items.map(it => ({
       id: newId(), origin: it.origin, platform: it.platform || '', fileName: it.fileName || '',
-      preview: it.preview || '', collection: it.collection || '', note: it.note || '',
+      hasImage: Boolean(it.image), collection: it.collection || '', note: it.note || '',
       importedAt: now, allYear: false,
       recipe: { ...cleanRecipe({ category: 'Plat', ...it.recipe }), seasons: [], meals: [] }
     }));
-    return savePending(pending);
+    pending.push(...added);
+    if (!savePending(pending)) return null;
+    await Promise.all(added.map((p, i) => items[i].image ? images.put(pendingImageKey(p.id), items[i].image) : null));
+    return added;
+  }
+
+  // Récupère le contenu de plusieurs recettes en attente (3 liens à la fois).
+  // onProgress(faites, total) est appelé après chaque lien ; renvoie le nombre de réussites.
+  async function fillPendingMany(ids, onProgress) {
+    const queue = ids.slice();
+    let done = 0;
+    let ok = 0;
+    const worker = async () => {
+      while (queue.length) {
+        const id = queue.shift();
+        const p = getPending().find(x => x.id === id);
+        if (p && p.recipe.source) {
+          try {
+            await fillPendingFromLink(p);
+            ok++;
+          } catch (e) {
+            p.note = 'Récupération automatique impossible : ' + e.message + ' Complète la recette à la main.';
+          }
+          const fresh = getPending();
+          const i = fresh.findIndex(x => x.id === id);
+          if (i >= 0) { fresh[i] = p; savePending(fresh); }
+        }
+        done++;
+        if (onProgress) onProgress(done, ids.length);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    return ok;
   }
 
   // Une recette importée est prête quand le nom, la saison et le repas ont été choisis.
@@ -267,13 +435,13 @@ const Cuisine = (() => {
     const conf = PLATFORMS[platform];
     const found = [];
     const seen = new Set();
-    const add = (url, collection) => {
+    const add = (url, collection, author) => {
       const u = url.replace(/[?#].*$/, '');
       if (conf && !conf.post.test(u)) return;
       if (!conf && !/^https?:\/\//.test(u)) return;
       if (seen.has(u)) return;
       seen.add(u);
-      found.push({ url: u, collection: collection || '' });
+      found.push({ url: u, collection: collection || '', author: author || '' });
     };
     let data = null;
     try { data = JSON.parse(text); } catch (e) { data = null; }
@@ -287,6 +455,7 @@ const Cuisine = (() => {
         }
         const name = node.string_map_data && node.string_map_data.Name;
         if (name && name.value && !name.href) current = name.value;
+        if (name && name.href && name.value) add(name.href, current, name.value);
         Object.values(node).forEach(walk);
       };
       walk(data);
@@ -294,6 +463,45 @@ const Cuisine = (() => {
       (String(text).match(/https?:\/\/[^\s"'<>]+/g) || []).forEach(u => add(u, ''));
     }
     return found;
+  }
+
+  // ---- Photos : rangées dans IndexedDB, qui a beaucoup plus de place que localStorage ----
+  // Clé = id de la recette (ou « attente:<id> » pour une recette importée pas encore validée).
+  const images = (() => {
+    let opening = null;
+    const open = () => opening || (opening = new Promise((resolve, reject) => {
+      const req = indexedDB.open('mon-app-cuisine', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('photos');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    }));
+    const run = (mode, action) => open().then(db => new Promise((resolve, reject) => {
+      const tx = db.transaction('photos', mode);
+      const req = action(tx.objectStore('photos'));
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = () => reject(tx.error);
+    }));
+    return {
+      get: key => run('readonly', st => st.get(key)).catch(() => null),
+      put: (key, dataUrl) => run('readwrite', st => st.put(dataUrl, key)).then(() => true).catch(() => false),
+      remove: key => run('readwrite', st => st.delete(key)).catch(() => null),
+      async move(from, to) {
+        const data = await this.get(from);
+        if (!data) return false;
+        await this.put(to, data);
+        await this.remove(from);
+        return true;
+      }
+    };
+  })();
+
+  // Affiche la photo rangée sous cette clé dans l'élément <img> (masqué s'il n'y en a pas).
+  function fillImage(img, key) {
+    images.get(key).then(data => {
+      if (data) img.src = data;
+      else img.hidden = true;
+    });
+    return img;
   }
 
   // Réduit une photo pour qu'elle tienne dans le stockage du navigateur.
@@ -315,8 +523,113 @@ const Cuisine = (() => {
     });
   }
 
+  // ---- Conversion automatique d'un lien par le serveur (Cloudflare Workers, voir server/worker.js) ----
+  let serverCheck = null;
+  // true si le site tourne avec son serveur (/api/extraire répond), false sinon
+  // (fichier ouvert en local, GitHub Pages…).
+  function serverAvailable() {
+    if (!serverCheck) {
+      serverCheck = location.protocol.startsWith('http')
+        ? fetch('api/extraire', { headers: { Accept: 'application/json' } })
+          .then(r => r.ok ? r.json() : null).then(d => Boolean(d && d.ok)).catch(() => false)
+        : Promise.resolve(false);
+    }
+    return serverCheck;
+  }
+
+  // Catégorie d'un site (« Plat principal », « Desserts »…) ramenée aux nôtres, ou '' si inconnue.
+  function categoryFrom(label) {
+    const l = normalize(label);
+    if (!l) return '';
+    const map = [['entree', 'Entrée'], ['apero', 'Entrée'], ['plat', 'Plat'], ['dessert', 'Dessert'], ['gateau', 'Dessert'],
+      ['boisson', 'Boisson'], ['cocktail', 'Boisson'], ['sauce', 'Sauce'], ['accompagnement', 'Accompagnement'],
+      ['petit-dej', 'Petit-déjeuner'], ['petit dej', 'Petit-déjeuner'], ['brunch', 'Petit-déjeuner']];
+    const hit = map.find(([k]) => l.includes(k));
+    return hit ? hit[1] : '';
+  }
+
+  // Demande au serveur le contenu de la recette derrière un lien, et sa photo.
+  // Renvoie { recipe, image, author, siteName, found } ou lève une erreur lisible.
+  async function extractFromLink(url) {
+    const res = await fetch('api/extraire', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Le serveur n\'a pas pu lire ce lien.');
+    const recipe = {
+      title: data.title || '',
+      ingredients: data.ingredients || [],
+      steps: data.steps || [],
+      servings: data.servings || '',
+      prep: data.prep || '',
+      cook: data.cook || '',
+      category: categoryFrom(data.category),
+      notes: ''
+    };
+    // Publication de réseau social : la recette est souvent dans la légende.
+    if (data.text && !recipe.ingredients.length && !recipe.steps.length) {
+      const parsed = parseRecipeText((recipe.title || '') + '\n' + data.text);
+      Object.assign(recipe, { title: recipe.title || parsed.title, ingredients: parsed.ingredients, steps: parsed.steps, servings: recipe.servings || parsed.servings || '',
+        prep: recipe.prep || parsed.prep || '', cook: recipe.cook || parsed.cook || '' });
+      if (!parsed.ingredients.length && !parsed.steps.length) recipe.notes = data.text;
+    }
+    let image = '';
+    if (data.image) {
+      try {
+        const img = await fetch('api/image?url=' + encodeURIComponent(data.image));
+        if (img.ok) image = await shrinkImage(await img.blob());
+      } catch (e) { image = ''; }
+    }
+    return { recipe, image, author: data.author || '', siteName: data.siteName || '', found: data.found || '' };
+  }
+
+  // Remplit une recette en attente avec ce que le serveur a trouvé, sans écraser ce qui est déjà saisi.
+  async function fillPendingFromLink(p) {
+    const got = await extractFromLink(p.recipe.source);
+    const r = p.recipe;
+    const cleaned = cleanRecipe({ ...got.recipe, category: r.category });
+    if (got.recipe.category && !p.categoryChosen) r.category = got.recipe.category;
+    if (!r.title.trim() && cleaned.title) r.title = cleaned.title;
+    ['ingredients', 'steps'].forEach(k => { if (!r[k].length) r[k] = cleaned[k]; });
+    ['servings', 'prep', 'cook'].forEach(k => { if (!r[k]) r[k] = cleaned[k]; });
+    if (!r.notes && cleaned.notes) r.notes = cleaned.notes;
+    if (!r.sourceAuthor && got.author) r.sourceAuthor = got.author;
+    if (got.siteName) p.siteName = got.siteName;
+    if (got.image && !p.hasImage && await images.put(pendingImageKey(p.id), got.image)) p.hasImage = true;
+    p.note = got.found === 'recette'
+      ? 'Recette récupérée automatiquement' + (got.siteName ? ' depuis ' + got.siteName : '') + ' : vérifie-la avant de valider.'
+      : got.found === 'texte'
+        ? 'Texte de la publication récupéré : vérifie que les ingrédients et les étapes sont bien rangés.'
+        : 'Le lien a été lu mais aucune recette n\'y a été trouvée : complète-la à la main.';
+    p.fetched = true;
+    return got.found;
+  }
+
+  // Les recettes enregistrées avant le découpage des ingrédients sont converties une fois.
+  (function migrate() {
+    const raw = read(KEYS.recipes, null);
+    if (Array.isArray(raw) && raw.some(r => r && Array.isArray(r.ingredients) && r.ingredients.some(i => typeof i === 'string'))) {
+      write(KEYS.recipes, raw.filter(r => r && r.title).map(cleanRecipe));
+    }
+    const pending = read(KEYS.pending, null);
+    if (Array.isArray(pending) && pending.some(p => p && (p.preview || (p.recipe && (p.recipe.ingredients || []).some(i => typeof i === 'string'))))) {
+      const moves = [];
+      const cleaned = pending.filter(p => p && p.recipe).map(p => {
+        const { preview, ...rest } = p;
+        if (preview) { moves.push([rest.id, preview]); rest.hasImage = true; }
+        return { ...rest, recipe: { ...cleanRecipe(rest.recipe), seasons: rest.recipe.seasons || [], meals: rest.recipe.meals || [] } };
+      });
+      write(KEYS.pending, cleaned);
+      moves.forEach(([id, data]) => images.put(pendingImageKey(id), data));
+    }
+  })();
+
   return {
     CATEGORIES, SEASONS, MEALS, PLATFORMS, newId, lines, normalize, cleanRecipe,
+    parseIngredient, ingredientTexts, ingredientAmount, formatQuantity,
+    images, fillImage, pendingImageKey, serverAvailable, extractFromLink, fillPendingFromLink, fillPendingMany,
     getRecipes, saveRecipes, getHistory, saveHistory, getDraft, saveDraft,
     getPending, savePending, addPending, pendingMissing, getImportMode, saveImportMode,
     platformOf, platformLabel, titleFromUrl, parseRecipeText, parseSocialExport, shrinkImage,
