@@ -19,6 +19,8 @@
         Mon App Cuisine
       </a>
       <a href="recettes.html" aria-current="page">Enregistrer</a>
+      <a href="importer.html">Importer</a>
+      <a href="validation.html">À valider</a>
       <a href="menus.html">Menus de la semaine</a>
       <a href="catalogue.html">Toutes mes recettes</a>
       <a href="historique.html">Historique</a>
@@ -55,6 +57,10 @@
           <fieldset>
             <legend>Saisons <small>— ne coche rien si la recette se fait toute l'année</small></legend>
             <div class="checks" id="seasons"></div>
+          </fieldset>
+          <fieldset>
+            <legend>Repas <small>— ne coche rien si elle convient midi et soir</small></legend>
+            <div class="checks" id="meals"></div>
           </fieldset>
           <label>Ingrédients <small>un par ligne</small>
             <textarea name="ingredients" placeholder="200 g de farine&#10;3 œufs&#10;50 cl de lait"></textarea>
@@ -103,6 +109,12 @@
       return box;
     });
 
+    const mealBoxes = Object.entries(Cuisine.MEALS).map(([k, label]) => {
+      const box = el('input', { type: 'checkbox', value: k });
+      document.getElementById('meals').append(el('label', {}, [box, label]));
+      return box;
+    });
+
     function showNotice(kind, children) {
       notice.replaceChildren(el('p', { className: 'notice ' + kind }, children));
       notice.style.marginBottom = '16px';
@@ -126,6 +138,7 @@
       fields.prep.value = editing.prep;
       fields.cook.value = editing.cook;
       seasonBoxes.forEach(b => { b.checked = editing.seasons.includes(b.value); });
+      mealBoxes.forEach(b => { b.checked = editing.meals.includes(b.value); });
       fields.ingredients.value = editing.ingredients.join('\n');
       fields.steps.value = editing.steps.join('\n');
       fields.source.value = editing.source;
@@ -138,6 +151,7 @@
         title: fields.title.value,
         category: fields.category.value,
         seasons: seasonBoxes.filter(b => b.checked).map(b => b.value),
+        meals: mealBoxes.filter(b => b.checked).map(b => b.value),
         servings: fields.servings.value,
         prep: fields.prep.value,
         cook: fields.cook.value,

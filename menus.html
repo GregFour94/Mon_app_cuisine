@@ -31,6 +31,24 @@
       .slot .serv { grid-column: 2; }
     }
     #available { margin-top: 4px; }
+
+    /* Choix des repas à prévoir : un bloc par repas, qu'on active ou non */
+    .meal-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .meal-plan {
+      display: grid; gap: 12px; min-width: 0;
+      border: 1.5px solid var(--border); border-radius: 14px; padding: 14px;
+      background: var(--bg);
+      transition: border-color 0.2s, background 0.2s, opacity 0.2s;
+    }
+    .meal-plan:has(.meal-toggle input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 5%, var(--surface)); }
+    .meal-plan:not(:has(.meal-toggle input:checked)) .meal-fields { opacity: 0.45; }
+    .meal-plan .meal-toggle { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; cursor: pointer; }
+    .meal-plan .meal-toggle input { width: 18px; height: 18px; }
+    .meal-plan .meal-toggle small { font-family: var(--font-body); font-size: 0.85rem; font-weight: 500; color: var(--muted); margin-left: auto; }
+    .meal-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; transition: opacity 0.2s; }
+    @media (max-width: 560px) {
+      .meal-plans { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -43,6 +61,8 @@
         Mon App Cuisine
       </a>
       <a href="recettes.html">Enregistrer</a>
+      <a href="importer.html">Importer</a>
+      <a href="validation.html">À valider</a>
       <a href="menus.html" aria-current="page">Menus de la semaine</a>
       <a href="catalogue.html">Toutes mes recettes</a>
       <a href="historique.html">Historique</a>
@@ -67,20 +87,33 @@
               <select name="season"></select>
             </label>
           </div>
-          <div class="row">
-            <label>Recettes pour le midi
-              <input type="number" name="midi" min="0" max="14" value="5" required>
-            </label>
-            <label>Portions par recette (midi)
-              <input type="number" name="servMidi" min="1" max="50" value="2" required>
-            </label>
-            <label>Recettes pour le soir
-              <input type="number" name="soir" min="0" max="14" value="7" required>
-            </label>
-            <label>Portions par recette (soir)
-              <input type="number" name="servSoir" min="1" max="50" value="2" required>
-            </label>
-          </div>
+          <fieldset>
+            <legend>Repas à prévoir <small>— seules les recettes prévues pour ce repas sont proposées</small></legend>
+            <div class="meal-plans">
+              <div class="meal-plan">
+                <label class="meal-toggle"><input type="checkbox" name="useMidi" checked> Midi <small id="avail-midi"></small></label>
+                <div class="meal-fields">
+                  <label>Recettes
+                    <input type="number" name="midi" min="1" max="14" value="5" required>
+                  </label>
+                  <label>Portions par recette
+                    <input type="number" name="servMidi" min="1" max="50" value="2" required>
+                  </label>
+                </div>
+              </div>
+              <div class="meal-plan">
+                <label class="meal-toggle"><input type="checkbox" name="useSoir" checked> Soir <small id="avail-soir"></small></label>
+                <div class="meal-fields">
+                  <label>Recettes
+                    <input type="number" name="soir" min="1" max="14" value="7" required>
+                  </label>
+                  <label>Portions par recette
+                    <input type="number" name="servSoir" min="1" max="50" value="2" required>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </fieldset>
           <fieldset>
             <legend>Catégories à utiliser</legend>
             <div class="checks" id="categories"></div>
@@ -144,21 +177,41 @@
       return catBoxes.filter(b => b.checked).map(b => b.value);
     }
 
-    function poolFor(season, categories) {
-      return Cuisine.getRecipes().filter(r => categories.includes(r.category) && Cuisine.fitsSeason(r, season));
+    // Repas cochés dans le formulaire ; un repas décoché n'a pas de créneaux.
+    const mealToggles = { midi: f.useMidi, soir: f.useSoir };
+    function selectedMeals() {
+      return Object.keys(mealToggles).filter(m => mealToggles[m].checked);
+    }
+    function syncMealFields() {
+      Object.entries(mealToggles).forEach(([meal, box]) => {
+        f[meal].disabled = !box.checked;
+        f[meal === 'midi' ? 'servMidi' : 'servSoir'].disabled = !box.checked;
+      });
+    }
+
+    function poolFor(season, categories, meal) {
+      return Cuisine.getRecipes().filter(r => categories.includes(r.category) && Cuisine.fitsSeason(r, season)
+        && (!meal || Cuisine.fitsMeal(r, meal)));
     }
 
     function updateAvailable() {
       const recipes = Cuisine.getRecipes();
-      const n = poolFor(f.season.value, selectedCategories()).length;
       const p = $('available');
+      Object.keys(mealToggles).forEach(meal => {
+        const n = poolFor(f.season.value, selectedCategories(), meal).length;
+        $('avail-' + meal).textContent = recipes.length ? Cuisine.plural(n, 'recette') + ' possible' + (n > 1 ? 's' : '') : '';
+      });
       if (!recipes.length) {
         p.replaceChildren('Tu n\'as encore aucune recette. ', el('a', { href: 'recettes.html', textContent: 'Enregistre tes premières recettes' }), ' pour pouvoir créer un menu.');
+      } else if (!selectedMeals().length) {
+        p.textContent = 'Coche au moins un repas, midi ou soir, pour générer un menu.';
       } else {
-        p.textContent = Cuisine.plural(n, 'recette') + ' de ta base correspond' + (n > 1 ? 'ent' : '') + ' à ces critères (sur ' + recipes.length + ').';
+        const n = poolFor(f.season.value, selectedCategories()).length;
+        p.textContent = Cuisine.plural(n, 'recette') + ' de ta base correspond' + (n > 1 ? 'ent' : '') + ' à la saison et aux catégories (sur ' + recipes.length + ').';
       }
     }
     [f.season, ...catBoxes].forEach(c => c.addEventListener('change', updateAvailable));
+    Object.values(mealToggles).forEach(box => box.addEventListener('change', () => { syncMealFields(); updateAvailable(); }));
 
     // --- Tirage des recettes ---
     function shuffle(list) {
@@ -181,33 +234,43 @@
       return shuffle(pool).sort((a, b) => recent.has(a.id) - recent.has(b.id));
     }
 
+    // Chaque repas puise dans ses propres recettes ; une recette déjà tirée
+    // pour l'autre repas ne revient que s'il n'y a plus d'autre choix.
     function generate() {
       const season = f.season.value;
       const categories = selectedCategories();
-      const pool = ordered(poolFor(season, categories));
+      const meals = selectedMeals();
+      if (!meals.length) {
+        updateAvailable();
+        $('available').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
       const counts = { midi: Number(f.midi.value) || 0, soir: Number(f.soir.value) || 0 };
       const servings = { midi: Number(f.servMidi.value) || 1, soir: Number(f.servSoir.value) || 1 };
       const items = [];
-      let i = 0;
-      ['midi', 'soir'].forEach(meal => {
-        for (let k = 0; k < counts[meal] && pool.length; k++) {
-          items.push({ meal, recipeId: pool[i % pool.length].id, servings: servings[meal] });
-          i++;
+      const used = new Set();
+      meals.forEach(meal => {
+        const pool = ordered(poolFor(season, categories, meal));
+        const queue = [...pool.filter(r => !used.has(r.id)), ...pool.filter(r => used.has(r.id))];
+        for (let k = 0; k < counts[meal] && queue.length; k++) {
+          const r = queue[k % queue.length];
+          used.add(r.id);
+          items.push({ meal, recipeId: r.id, servings: servings[meal] });
         }
       });
-      draft = { weekStart: f.week.value, season, categories, items };
+      draft = { weekStart: f.week.value, season, categories, meals, items };
       Cuisine.saveDraft(draft);
       render();
     }
 
     function reroll(index) {
-      const pool = poolFor(draft.season, draft.categories);
+      const pool = poolFor(draft.season, draft.categories, draft.items[index].meal);
       const used = new Set(draft.items.map(it => it.recipeId));
       const current = draft.items[index].recipeId;
       let candidates = ordered(pool.filter(r => !used.has(r.id)));
       if (!candidates.length) candidates = shuffle(pool.filter(r => r.id !== current));
       if (!candidates.length) {
-        showNotice('warn', 'Aucune autre recette ne correspond aux critères pour remplacer celle-ci.');
+        showNotice('warn', 'Aucune autre recette ne correspond aux critères de ce repas pour remplacer celle-ci.');
         return;
       }
       draft.items[index].recipeId = candidates[0].id;
@@ -236,7 +299,7 @@
       const ids = draft.items.map(it => it.recipeId);
       const hasRepeats = new Set(ids).size < ids.length;
       if (!draft.items.length) {
-        result.append(el('p', { className: 'empty' }, ['Aucune recette ne correspond à ces critères. Change la saison ou les catégories, ou ',
+        result.append(el('p', { className: 'empty' }, ['Aucune recette ne correspond à ces critères. Change la saison, les catégories ou les repas, ou ',
           el('a', { href: 'recettes.html', textContent: 'enregistre de nouvelles recettes' }), '.']));
       } else if (hasRepeats) {
         showNotice('warn', 'Tu n\'as pas assez de recettes différentes pour ces critères : certaines reviennent plusieurs fois. Tu peux les remplacer avec « Changer ».');
@@ -322,8 +385,10 @@
       f.week.value = draft.weekStart;
       f.season.value = draft.season;
       catBoxes.forEach(b => { b.checked = (draft.categories || []).includes(b.value); });
+      if (Array.isArray(draft.meals)) Object.entries(mealToggles).forEach(([m, box]) => { box.checked = draft.meals.includes(m); });
       render();
     }
+    syncMealFields();
     updateAvailable();
   </script>
 </body>
