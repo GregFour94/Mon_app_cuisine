@@ -59,6 +59,11 @@
     .validate-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; border-top: 1px solid var(--border); padding-top: 16px; }
     .validate-bar .why { margin-right: auto; color: var(--muted); font-size: 0.9rem; }
 
+    .parsed { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin-top: -8px; }
+    .parsed:empty { display: none; }
+    .parsed li { font-size: 0.82rem; background: var(--surface-2); border-radius: 999px; padding: 3px 10px; }
+    .parsed b { font-family: var(--font-mono); font-weight: 500; color: var(--accent); }
+    .parsed .free { font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); }
     .zoom { padding: 0; width: min(900px, calc(100% - 32px)); background: var(--surface); }
     .zoom img { display: block; width: 100%; }
 
@@ -130,6 +135,7 @@
             <div class="line"><small>Catégorie</small><select id="bulk-category" aria-label="Catégorie pour la sélection"><option value="">Ne pas changer</option></select></div>
             <div class="line">
               <button type="button" class="btn small primary" id="bulk-apply">Appliquer</button>
+              <button type="button" class="btn small" id="bulk-fetch" hidden>Récupérer le contenu</button>
               <button type="button" class="btn small" id="bulk-validate">Valider les prêtes</button>
               <button type="button" class="btn small danger" id="bulk-reject">Rejeter</button>
             </div>
@@ -166,7 +172,7 @@
     const isReady = p => !Cuisine.pendingMissing(p).length;
     const sourceLabel = p => p.origin === 'fichier'
       ? ({ photo: 'Photo', texte: 'Texte', pdf: 'PDF' }[p.platform] || 'Document')
-      : Cuisine.platformLabel(p.platform, p.recipe.source);
+      : p.siteName || Cuisine.platformLabel(p.platform, p.recipe.source);
 
     function duplicateOf(p) {
       const t = Cuisine.normalize(p.recipe.title);
@@ -190,10 +196,16 @@
         const p = pending.find(x => x.id === id);
         if (!p || !isReady(p)) return;
         const notes = [p.recipe.notes, p.fileName && !p.recipe.source ? 'Importée depuis le fichier ' + p.fileName : ''].filter(Boolean).join('\n');
-        recipes.push(Cuisine.cleanRecipe({ ...p.recipe, id: undefined, seasons: p.allYear ? [] : p.recipe.seasons, notes, createdAt: new Date().toISOString() }));
-        done.push(p);
+        const recipe = Cuisine.cleanRecipe({
+          ...p.recipe, id: undefined, seasons: p.allYear ? [] : p.recipe.seasons, notes, createdAt: new Date().toISOString(),
+          sourcePlatform: p.origin === 'fichier' ? 'Fichier importé' : p.siteName || sourceLabel(p), importedAt: p.importedAt, image: p.hasImage
+        });
+        recipes.push(recipe);
+        done.push([p, recipe]);
       });
       if (!done.length || !Cuisine.saveRecipes(recipes)) return 0;
+      done.forEach(([p, recipe]) => { if (p.hasImage) Cuisine.images.move(Cuisine.pendingImageKey(p.id), recipe.id); });
+      done.forEach((pair, i) => { done[i] = pair[0]; });
       pending = pending.filter(p => !done.includes(p));
       done.forEach(p => selected.delete(p.id));
       save();
@@ -201,6 +213,7 @@
     }
 
     function reject(ids) {
+      ids.forEach(id => Cuisine.images.remove(Cuisine.pendingImageKey(id)));
       pending = pending.filter(p => !ids.includes(p.id));
       ids.forEach(id => selected.delete(id));
       save();
@@ -232,7 +245,7 @@
         cb.addEventListener('change', () => { cb.checked ? selected.add(p.id) : selected.delete(p.id); renderBulk(); });
         const row = el('div', { className: 'item', tabIndex: 0, ariaCurrent: String(p.id === currentId) }, [
           cb,
-          p.preview ? el('img', { className: 'thumb', src: p.preview, alt: '' }) : el('span', { className: 'thumb', textContent: sourceLabel(p).slice(0, 4).toUpperCase() }),
+          p.hasImage ? Cuisine.fillImage(el('img', { className: 'thumb', alt: '' }), Cuisine.pendingImageKey(p.id)) : el('span', { className: 'thumb', textContent: sourceLabel(p).slice(0, 4).toUpperCase() }),
           el('div', { className: 'info' }, [
             el('b', { className: p.recipe.title ? '' : 'untitled', textContent: p.recipe.title || 'Sans nom' }),
             el('div', { className: 'sub' }, [
@@ -266,6 +279,10 @@
         bulkMeals.has(k) ? bulkMeals.delete(k) : bulkMeals.add(k);
         renderBulk();
       })));
+      const withLink = pending.filter(p => selected.has(p.id) && p.recipe.source).length;
+      $('bulk-fetch').hidden = !server || !withLink;
+      $('bulk-fetch').disabled = false;
+      $('bulk-fetch').textContent = 'Récupérer le contenu (' + withLink + ')';
       const readyCount = pending.filter(p => selected.has(p.id) && isReady(p)).length;
       $('bulk-validate').textContent = 'Valider les prêtes (' + readyCount + ')';
       $('bulk-validate').disabled = !readyCount;
@@ -327,11 +344,19 @@
       if (r.source) originText.push(el('a', { href: r.source, target: '_blank', rel: 'noopener', textContent: 'Ouvrir la publication ↗' }));
       if (p.fileName) originText.push(el('span', { className: 'meta', textContent: p.fileName }));
       if (p.note) originText.push(el('span', { className: 'meta', textContent: p.note }));
-      const origin = el('div', { className: 'origin' }, [
-        p.preview ? el('img', { src: p.preview, alt: 'Photo importée', onclick: () => { $('zoom-img').src = p.preview; $('zoom').showModal(); } }) : el('span'),
-        el('div', { className: 'text' }, originText)
-      ]);
-      if (!p.preview) origin.style.gridTemplateColumns = '1fr';
+      if (r.source && server) {
+        const fetchBtn = el('button', { type: 'button', className: 'btn small', textContent: p.fetched ? '↻ Récupérer à nouveau depuis le lien' : '⤓ Récupérer depuis le lien' });
+        fetchBtn.addEventListener('click', async () => {
+          fetchBtn.disabled = true;
+          fetchBtn.textContent = 'Récupération…';
+          await fetchContent([p.id]);
+        });
+        originText.push(el('div', {}, [fetchBtn]));
+      }
+      const photo = p.hasImage ? Cuisine.fillImage(el('img', { alt: 'Photo importée' }), Cuisine.pendingImageKey(p.id)) : el('span');
+      photo.addEventListener('click', () => { $('zoom-img').src = photo.src; $('zoom').showModal(); });
+      const origin = el('div', { className: 'origin' }, [photo, el('div', { className: 'text' }, originText)]);
+      if (!p.hasImage) origin.style.gridTemplateColumns = '1fr';
 
       const dup = duplicateOf(p);
       const dupBox = el('div');
@@ -341,14 +366,22 @@
       };
 
       const input = (name, props = {}) => {
-        const f = el(props.tag || 'input', { value: Array.isArray(r[name]) ? r[name].join('\n') : (r[name] || ''), ...props, tag: undefined });
+        const value = name === 'ingredients' ? Cuisine.ingredientTexts(r).join('\n') : Array.isArray(r[name]) ? r[name].join('\n') : (r[name] || '');
+        const f = el(props.tag || 'input', { value, ...props, tag: undefined });
         f.addEventListener('input', () => {
-          r[name] = Array.isArray(r[name]) ? Cuisine.lines(f.value) : f.value;
+          if (name === 'ingredients') { r.ingredients = Cuisine.lines(f.value).map(Cuisine.parseIngredient); renderParsed(); }
+          else r[name] = Array.isArray(r[name]) ? Cuisine.lines(f.value) : f.value;
           if (name === 'title') { renderDup(); renderStatus(); }
           touch();
         });
         return f;
       };
+
+      // Aperçu du découpage des ingrédients (quantité · unité · ingrédient).
+      const parsed = el('ul', { className: 'parsed' });
+      const renderParsed = () => parsed.replaceChildren(...r.ingredients.map(i => el('li', {}, i.quantity !== null
+        ? [el('b', { textContent: Cuisine.ingredientAmount(i) }), ' ' + i.name]
+        : [el('span', { className: 'free', textContent: 'sans quantité' }), ' ' + i.name])));
 
       // Champs obligatoires : saison et repas
       const mustSeason = el('span', { className: 'must' });
@@ -402,7 +435,7 @@
       const category = el('select', { ariaLabel: 'Catégorie' });
       Cuisine.CATEGORIES.forEach(c => category.append(el('option', { value: c, textContent: c })));
       category.value = r.category;
-      category.addEventListener('change', () => { r.category = category.value; touch(); });
+      category.addEventListener('change', () => { r.category = category.value; p.categoryChosen = true; touch(); });
 
       box.replaceChildren(el('div', { className: 'panel' }, [
         el('div', { className: 'editor-head' }, [
@@ -420,14 +453,37 @@
           el('label', {}, [el('span', {}, ['Préparation ', el('small', { textContent: '(min)' })]), input('prep', { type: 'number', min: 0, max: 1440 })]),
           el('label', {}, [el('span', {}, ['Cuisson ', el('small', { textContent: '(min)' })]), input('cook', { type: 'number', min: 0, max: 1440 })])
         ]),
-        el('label', {}, [el('span', {}, ['Ingrédients ', el('small', { textContent: 'un par ligne' })]), input('ingredients', { tag: 'textarea' })]),
+        el('label', {}, [el('span', {}, ['Ingrédients ', el('small', { textContent: 'un par ligne · découpage ci-dessous' })]), input('ingredients', { tag: 'textarea' })]),
+        parsed,
         el('label', {}, [el('span', {}, ['Étapes ', el('small', { textContent: 'une par ligne' })]), input('steps', { tag: 'textarea' })]),
-        el('label', {}, [el('span', {}, ['Source ', el('small', { textContent: 'lien ou livre' })]), input('source', { maxLength: 300 })]),
+        el('div', { className: 'row' }, [
+          el('label', {}, [el('span', {}, ['Source ', el('small', { textContent: 'lien ou livre' })]), input('source', { maxLength: 300 })]),
+          el('label', {}, [el('span', {}, ['Auteur ', el('small', { textContent: '(facultatif)' })]), input('sourceAuthor', { maxLength: 120, placeholder: 'Ex. @chef.maison' })])
+        ]),
         el('label', {}, [el('span', {}, ['Notes ', el('small', { textContent: '(facultatif)' })]), input('notes', { tag: 'textarea', style: 'min-height: 70px;' })]),
         el('div', { className: 'validate-bar' }, [why, rejectBtn, validateBtn])
       ]));
-      renderSeasons(); renderMeals(); renderStatus(); renderDup();
+      renderSeasons(); renderMeals(); renderStatus(); renderDup(); renderParsed();
     }
+
+    // ---- Récupération du contenu par le serveur ----
+    let server = false;
+    Cuisine.serverAvailable().then(ok => { server = ok; if (pending.length) render(); });
+
+    async function fetchContent(ids) {
+      const ok = await Cuisine.fillPendingMany(ids, (done, total) => notify('ok', 'Récupération en cours : ' + done + ' / ' + total + '…'));
+      pending = Cuisine.getPending();
+      notify(ok ? 'ok' : 'warn', ok
+        ? plural(ok, 'recette') + ' complétée' + (ok > 1 ? 's' : '') + ' depuis ' + (ok > 1 ? 'leurs liens' : 'son lien') + '. Vérifie le contenu, puis choisis la saison et le repas.'
+        : 'Aucun contenu n\'a pu être récupéré. Complète les recettes à la main.');
+      render();
+    }
+
+    $('bulk-fetch').addEventListener('click', async e => {
+      const ids = pending.filter(p => selected.has(p.id) && p.recipe.source).map(p => p.id);
+      e.currentTarget.disabled = true;
+      await fetchContent(ids);
+    });
 
     // Rafraîchit la liste et les compteurs sans reconstruire la fiche en cours de saisie.
     function renderSide() {
@@ -452,8 +508,8 @@
     }
 
     // Exemples pour découvrir la page (marqués comme tels).
-    $('samples').addEventListener('click', () => {
-      Cuisine.addPending([
+    $('samples').addEventListener('click', async () => {
+      await Cuisine.addPending([
         { origin: 'fichier', platform: 'texte', fileName: 'velouté-potiron.txt', note: 'Exemple · texte lu automatiquement.',
           recipe: { title: 'Velouté de potiron', category: 'Entrée', servings: '4', prep: '15', cook: '30',
             ingredients: ['1 kg de potiron', '1 oignon', '50 cl de bouillon de légumes', '20 cl de crème liquide'],
@@ -461,7 +517,7 @@
         { origin: 'lien', platform: 'site', note: 'Exemple · lien vers un site de cuisine.',
           recipe: { title: 'Tarte tatin', category: 'Dessert', source: 'https://www.marmiton.org/recettes/recette_tarte-tatin_12345.aspx' } },
         { origin: 'compte', platform: 'instagram', collection: 'Recettes à tester', note: 'Exemple · publication Instagram enregistrée.',
-          recipe: { source: 'https://www.instagram.com/p/EXEMPLE123/' } }
+          recipe: { source: 'https://www.instagram.com/p/EXEMPLE123/', sourceAuthor: '@exemple.cuisine' } }
       ]);
       pending = Cuisine.getPending();
       currentId = pending[0].id;

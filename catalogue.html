@@ -106,7 +106,7 @@
       const shown = recipes
         .filter(r => !category.value || r.category === category.value)
         .filter(r => !season.value || Cuisine.fitsSeason(r, season.value))
-        .filter(r => !q || normalize([r.title, r.ingredients.join(' '), r.notes, r.category, r.source].join(' ')).includes(q));
+        .filter(r => !q || normalize([r.title, Cuisine.ingredientTexts(r).join(' '), r.notes, r.category, r.source, r.sourceAuthor].join(' ')).includes(q));
       const byTitle = (a, b) => a.title.localeCompare(b.title, 'fr');
       shown.sort({
         title: byTitle,
@@ -127,7 +127,8 @@
         const time = Cuisine.totalTime(r);
         const meta = [r.servings ? r.servings + ' pers.' : '', time ? time + ' min' : '',
           counts[r.id] ? 'cuisinée ' + counts[r.id] + ' fois' : ''].filter(Boolean).join(' · ');
-        const card = el('button', { className: 'card' }, [
+        const card = el('button', { className: 'card' + (r.image ? ' with-photo' : '') }, [
+          ...(r.image ? [Cuisine.fillImage(el('img', { className: 'card-photo', alt: '', loading: 'lazy' }), r.id)] : []),
           el('h3', { textContent: r.title }),
           el('div', { className: 'meta', textContent: meta || ' ' }),
           el('div', { className: 'tags' }, [
@@ -160,14 +161,22 @@
       const r = recipes.find(x => x.id === viewingId);
       if (!r || !confirm('Supprimer la recette « ' + r.title + ' » ? Elle restera visible dans l\'historique des menus déjà validés.')) return;
       Cuisine.saveRecipes(recipes.filter(x => x.id !== viewingId));
+      Cuisine.images.remove(viewingId);
       view.close();
       render();
     });
     [search, category, season, sort].forEach(c => c.addEventListener('input', render));
 
     // Export / import : recettes + historique dans un seul fichier.
-    $('export').addEventListener('click', () => {
-      const data = { recettes: Cuisine.getRecipes(), historique: Cuisine.getHistory(), exporteLe: new Date().toISOString() };
+    // Les photos sont jointes au fichier (« photos » : identifiant de recette → image).
+    $('export').addEventListener('click', async () => {
+      const recettes = Cuisine.getRecipes();
+      const photos = {};
+      for (const r of recettes.filter(x => x.image)) {
+        const data = await Cuisine.images.get(r.id);
+        if (data) photos[r.id] = data;
+      }
+      const data = { recettes, historique: Cuisine.getHistory(), photos, exporteLe: new Date().toISOString() };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const a = el('a', { href: URL.createObjectURL(blob), download: 'mes-recettes-' + Cuisine.isoDate(new Date()) + '.json' });
       document.body.append(a);
@@ -201,6 +210,9 @@
         if (!r || typeof r.title !== 'string' || !r.title.trim()) return;
         if (r.id && knownRecipes.has(String(r.id))) return;
         const clean = Cuisine.cleanRecipe(r);
+        const photo = data && data.photos && r.id ? data.photos[r.id] : '';
+        clean.image = typeof photo === 'string' && photo.startsWith('data:image/');
+        if (clean.image) Cuisine.images.put(clean.id, photo);
         knownRecipes.add(clean.id);
         recipes.push(clean);
         addedRecipes++;
