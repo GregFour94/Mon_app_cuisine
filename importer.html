@@ -80,6 +80,10 @@
     .collections { display: grid; gap: 6px; }
     .server-status { margin-top: 12px; font-size: 0.9rem; color: var(--muted); }
     .server-status .ok-dot { color: var(--ok); font-weight: 600; }
+    .found .info span.reading { color: var(--accent); font-weight: 600; }
+    .found .info span.reading::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; vertical-align: -1px; animation: spin 0.8s linear infinite; }
+    .found .info span.failed { color: var(--warn-text); white-space: normal; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .server-status .ok-dot::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); margin-right: 8px; vertical-align: middle; }
 
     @media (max-width: 820px) {
@@ -159,7 +163,7 @@
         <span class="meta">ou clique pour les choisir · sur téléphone, tu peux prendre une photo</span>
       </label>
       <input type="file" id="file-input" multiple accept="image/*,.pdf,.txt,.md,.doc,.docx,text/plain" hidden>
-      <p class="meta" style="margin-top: 12px;">Les fichiers texte sont lus automatiquement. Pour les photos, les PDF et les documents Word, la recette est créée avec le fichier joint et tu complètes le contenu à la validation.</p>
+      <p class="server-status" id="file-reader"></p>
       <ul class="found" id="file-list"></ul>
       <div class="actions" style="margin-top: 16px;">
         <button type="button" class="btn" id="file-clear" hidden>Tout retirer</button>
@@ -307,7 +311,35 @@
       : /\.pdf$/i.test(f.name) ? 'pdf' : 'document';
     const nameOf = f => f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
 
+    // Lecture des photos et PDF par l'IA : seulement quand le serveur et sa clé sont en place.
+    let reader = false;
+    Cuisine.photoReaderAvailable().then(ok => {
+      reader = ok;
+      $('file-reader').replaceChildren(ok
+        ? el('span', { className: 'ok-dot', textContent: 'Lecture automatique activée : l\'IA remplit le nom, les ingrédients, les étapes, la saison et le repas à partir de la photo ou du PDF.' })
+        : el('span', { textContent: 'Lecture automatique des photos indisponible ici : les fichiers texte sont lus, et pour les photos et PDF tu complètes la recette à la validation.' }));
+    });
+
+    // Lit une photo ou un PDF avec l'IA et range le résultat dans l'élément de la liste.
+    async function readWithAi(item, file) {
+      item.status = 'lecture';
+      renderFiles();
+      try {
+        const { recipe, allYear } = await Cuisine.readRecipeFile(file);
+        item.recipe = recipe;
+        item.allYear = allYear;
+        item.aiFilled = true;
+        item.note = 'Recette lue par l\'IA à partir ' + (item.platform === 'pdf' ? 'du PDF' : 'de la photo') + ' : vérifie-la, puis valide.';
+        item.status = 'lue';
+      } catch (e) {
+        item.note = 'Lecture par l\'IA impossible : ' + e.message + ' Complète la recette à la main.';
+        item.status = 'echec';
+      }
+      renderFiles();
+    }
+
     async function addFiles(list) {
+      const reads = [];
       for (const f of list) {
         const kind = kindOf(f);
         const item = { origin: 'fichier', fileName: f.name, platform: kind, recipe: { title: nameOf(f) } };
@@ -318,23 +350,40 @@
           item.image = await Cuisine.shrinkImage(f);
           item.note = 'Photo jointe : recopie les ingrédients et les étapes en t\'aidant de l\'image.';
         } else {
-          item.note = 'Document joint (' + kind.toUpperCase() + ') : la lecture automatique arrivera plus tard, complète la recette à la main.';
+          item.note = 'Document joint (' + kind.toUpperCase() + ') : complète la recette à la main.';
         }
         files.push(item);
+        if (reader && (kind === 'photo' || kind === 'pdf')) reads.push(readWithAi(item, f));
       }
       renderFiles();
+      await Promise.all(reads);
+    }
+
+    function fileDetail(it) {
+      if (it.status === 'lecture') return 'Lecture par l\'IA en cours…';
+      if (it.status === 'echec') return it.note;
+      const parts = [it.fileName];
+      if (it.platform === 'texte' || it.aiFilled) {
+        parts.push(plural(it.recipe.ingredients.length, 'ingrédient') + ', ' + plural(it.recipe.steps.length, 'étape'));
+      }
+      if (it.aiFilled) {
+        parts.push((it.allYear ? 'toute l\'année' : it.recipe.seasons.join(', ')) + ' · ' + (it.recipe.meals.length === 1 ? it.recipe.meals[0] : 'midi et soir'));
+      }
+      return parts.join(' · ');
     }
     function renderFiles() {
       $('file-list').replaceChildren(...files.map((it, i) => el('li', {}, [
         it.image ? el('img', { className: 'thumb', src: it.image, alt: '' }) : el('span', { className: 'thumb', textContent: it.platform.toUpperCase().slice(0, 4) }),
         el('div', { className: 'info' }, [
           el('b', { textContent: it.recipe.title || it.fileName }),
-          el('span', { textContent: it.fileName + (it.platform === 'texte' ? ' · ' + plural(it.recipe.ingredients.length, 'ingrédient') + ', ' + plural(it.recipe.steps.length, 'étape') : '') })
+          el('span', { className: it.status === 'lecture' ? 'reading' : it.status === 'echec' ? 'failed' : '', textContent: fileDetail(it) })
         ]),
         el('button', { type: 'button', className: 'btn small', textContent: 'Retirer', onclick: () => { files.splice(i, 1); renderFiles(); } })
       ])));
-      $('file-send').disabled = !files.length;
-      $('file-send').textContent = files.length ? 'Envoyer ' + plural(files.length, 'recette') + ' à la validation' : 'Envoyer à la validation';
+      const reading = files.filter(it => it.status === 'lecture').length;
+      $('file-send').disabled = !files.length || reading > 0;
+      $('file-send').textContent = reading ? 'Lecture de ' + plural(reading, 'fichier') + '…'
+        : files.length ? 'Envoyer ' + plural(files.length, 'recette') + ' à la validation' : 'Envoyer à la validation';
       $('file-clear').hidden = !files.length;
     }
     $('file-input').addEventListener('change', e => { addFiles([...e.target.files]); e.target.value = ''; });

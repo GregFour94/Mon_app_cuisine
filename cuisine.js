@@ -316,8 +316,11 @@ const Cuisine = (() => {
     const added = items.map(it => ({
       id: newId(), origin: it.origin, platform: it.platform || '', fileName: it.fileName || '',
       hasImage: Boolean(it.image), collection: it.collection || '', note: it.note || '',
-      importedAt: now, allYear: false,
-      recipe: { ...cleanRecipe({ category: 'Plat', ...it.recipe }), seasons: [], meals: [] }
+      importedAt: now, allYear: Boolean(it.aiFilled && it.allYear), aiFilled: Boolean(it.aiFilled),
+      // La saison et le repas ne sont repris que s'ils viennent de la lecture par l'IA ;
+      // sinon ils restent à choisir à la validation.
+      recipe: { ...cleanRecipe({ category: 'Plat', ...it.recipe }),
+        ...(it.aiFilled ? {} : { seasons: [], meals: [] }) }
     }));
     pending.push(...added);
     if (!savePending(pending)) return null;
@@ -607,6 +610,43 @@ const Cuisine = (() => {
     return got.found;
   }
 
+  // ---- Lecture d'une photo ou d'un PDF de recette par l'IA (Claude, côté serveur) ----
+  let photoReaderCheck = null;
+  // true si le serveur répond et que la clé d'IA est configurée.
+  function photoReaderAvailable() {
+    if (!photoReaderCheck) {
+      photoReaderCheck = location.protocol.startsWith('http')
+        ? fetch('api/lire-photo', { headers: { Accept: 'application/json' } })
+          .then(r => r.ok ? r.json() : null).then(d => Boolean(d && d.ok)).catch(() => false)
+        : Promise.resolve(false);
+    }
+    return photoReaderCheck;
+  }
+
+  const readAsDataUrl = file => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+
+  // Envoie la photo (agrandie jusqu'à 1600 px pour que le texte reste lisible) ou le PDF au serveur.
+  // Renvoie { recipe, allYear } au format de l'application, ou lève une erreur lisible.
+  async function readRecipeFile(file) {
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const data = isPdf ? await readAsDataUrl(file) : await shrinkImage(file, 1600);
+    if (!data) throw new Error('Cette photo n\'a pas pu être ouverte par le navigateur (format HEIC ?). Essaie en JPEG.');
+    const res = await fetch('api/lire-photo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: isPdf ? 'application/pdf' : 'image/jpeg', data })
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || !out.recipe) throw new Error(out.error || 'La lecture par l\'IA a échoué.');
+    const { allYear, ...recipe } = out.recipe;
+    return { recipe, allYear };
+  }
+
   // Les recettes enregistrées avant le découpage des ingrédients sont converties une fois.
   (function migrate() {
     const raw = read(KEYS.recipes, null);
@@ -630,6 +670,7 @@ const Cuisine = (() => {
     CATEGORIES, SEASONS, MEALS, PLATFORMS, newId, lines, normalize, cleanRecipe,
     parseIngredient, ingredientTexts, ingredientAmount, formatQuantity,
     images, fillImage, pendingImageKey, serverAvailable, extractFromLink, fillPendingFromLink, fillPendingMany,
+    photoReaderAvailable, readRecipeFile,
     getRecipes, saveRecipes, getHistory, saveHistory, getDraft, saveDraft,
     getPending, savePending, addPending, pendingMissing, getImportMode, saveImportMode,
     platformOf, platformLabel, titleFromUrl, parseRecipeText, parseSocialExport, shrinkImage,

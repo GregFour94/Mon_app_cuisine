@@ -94,7 +94,7 @@
 
   <header class="container">
     <h1>Valider les <span>imports</span></h1>
-    <p>Vérifie chaque recette importée et précise la saison et le repas. Une recette n'entre dans ta base qu'une fois validée.</p>
+    <p>Vérifie chaque recette importée. Celles lues par l'IA arrivent déjà remplies, saison et repas compris ; pour les autres, précise-les. Une recette n'entre dans ta base qu'une fois validée.</p>
   </header>
 
   <main class="container">
@@ -492,7 +492,8 @@
       $('n-todo').textContent = pending.filter(p => !isReady(p)).length;
       const ready = pending.filter(isReady).length;
       $('validate-ready').disabled = !ready;
-      $('validate-ready').textContent = ready ? 'Valider les ' + plural(ready, 'recette') + ' prête' + (ready > 1 ? 's' : '') : 'Aucune recette prête';
+      $('validate-ready').textContent = !ready ? 'Aucune recette prête'
+        : ready === 1 ? 'Valider la recette prête' : 'Valider les ' + ready + ' recettes prêtes';
       renderFilters();
       renderQueue();
       renderBulk();
