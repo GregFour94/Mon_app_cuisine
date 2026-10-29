@@ -7,3 +7,5 @@ server
 wrangler.jsonc
 .assetsignore
 *.md
+package.json
+package-lock.json

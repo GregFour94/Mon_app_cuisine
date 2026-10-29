@@ -4,6 +4,11 @@
   "name": "mon-app-cuisine",
   "main": "server/worker.js",
   "compatibility_date": "2025-10-01",
+  // Une adresse de prévisualisation pour chaque version (branches, pull requests).
+  "preview_urls": true,
+  // Nécessaire pour « npx wrangler preview », la commande que Cloudflare lance pour les branches.
+  // Les fichiers statiques et la date de compatibilité restent au niveau principal.
+  "previews": {},
   // Les pages du site sont à la racine du dépôt ; .assetsignore exclut le code serveur.
   "assets": {
     "directory": ".",

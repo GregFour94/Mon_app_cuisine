@@ -3,10 +3,12 @@
 // seules les adresses /api/… arrivent ici.
 import * as extraire from './extraire.js';
 import * as image from './image.js';
+import * as lecturePhoto from './lecture-photo.js';
 
 const routes = {
   '/api/extraire': { GET: extraire.onRequestGet, POST: extraire.onRequestPost },
-  '/api/image': { GET: image.onRequestGet }
+  '/api/image': { GET: image.onRequestGet },
+  '/api/lire-photo': { GET: lecturePhoto.onRequestGet, POST: lecturePhoto.onRequestPost }
 };
 
 export default {

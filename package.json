@@ -1,0 +1,9 @@
+{
+  "name": "mon-app-cuisine",
+  "private": true,
+  "description": "Site Mon App Cuisine et son Worker Cloudflare",
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0"
+  }
+}
