@@ -4,6 +4,8 @@
   "name": "mon-app-cuisine",
   "main": "server/worker.js",
   "compatibility_date": "2025-10-01",
+  // Une adresse de prévisualisation pour chaque version (branches, pull requests).
+  "preview_urls": true,
   // Les pages du site sont à la racine du dépôt ; .assetsignore exclut le code serveur.
   "assets": {
     "directory": ".",
