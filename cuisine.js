@@ -408,27 +408,127 @@ const Cuisine = (() => {
     return m[3] ? m[3] : String(Number(m[1]) * 60 + (Number(m[2]) || 0));
   }
 
-  // Lit une recette écrite en texte libre : titre, portions, temps, ingrédients et étapes.
+  // ---- Découpage d'une recette écrite en texte libre (fichier .txt, description de publication) ----
+  // Chaque ligne est rangée en ingrédient, étape ou note, d'après les titres de section quand il y en a
+  // (même décorés : « 🛒 INGRÉDIENTS 👇 ») et sinon d'après sa forme. Le texte parasite des
+  // réseaux sociaux (hashtags, mentions, « abonne-toi », « lien en bio »…) est écarté.
+
+  // Verbes qui commencent une étape (infinitif, impératif ou présent).
+  const STEP_VERBS = new RegExp('^(?:' + [
+    'ajout', 'arros', 'assaisonn', 'badigeonn', 'beurr', 'cisel', 'coup', 'couvr', 'decoup', 'depos', 'dispos',
+    'egoutt', 'emiett', 'eminc', 'epluch', 'etal', 'enfourn', 'enrob', 'epaiss', 'fouett', 'grill', 'hach',
+    'incorpor', 'laiss', 'lav', 'melang', 'mix', 'napp', 'parsem', 'passe', 'pass', 'plac', 'poel', 'poivr',
+    'prechauff', 'prepar', 'rajout', 'reserv', 'remu', 'retir', 'rissol', 'saupoudr', 'tranch', 'vers',
+    'zest', 'chauff', 'fond', 'press', 'roul', 'form', 'decor', 'garn', 'remplis', 'repart', 'arrang', 'sal',
+    'dor', 'blanch', 'farc', 'rot', 'petr', 'serv', 'cuis', 'fai', 'met', 'bat', 'port', 'travaill', 'tamis',
+    'mesur', 'pes', 'rinc', 'trempe', 'egrain', 'gratt', 'presse', 'assembl', 'decoup', 'filtr', 'refroid'
+  ].join('|') + ')(?:er|ez|e|es|ir|issez|is|it|re|ons|ent|s|ant)?\\b|^(?:faire|faites|fais|mettre|mettez|mets|cuire|cuisez|battre|battez|bats|servir|servez|sers|puis|ensuite|enfin|une fois|pendant|quand|lorsque|des que|au bout de|a la sortie|dans (?:un|une|le|la|les) )\\b');
+
+  const decor = str => String(str || '')
+    .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}\u{20E3}]/gu, ' ')
+    .replace(/[ \t]+/g, ' ').trim();
+  const keycapNumber = /^\s*(\d{1,2})️?⃣/;
+  const bullet = /^([-–—•·▪▫◦●○*✓✔→➡>]+|\d{1,2}\s*[.)/:\-–]\s+(?=\D)|[ée]tape\s*\d+\s*[:.)\-–]?)\s*/i;
+  const quantityStart = /^(\d+([.,/]\d+)?|[½¼¾⅓⅔⅛]|une?\s|deux\s|trois\s|quatre\s|cinq\s|six\s|dix\s|douze\s|quelques\s|une poign|une pinc|un filet|un peu|du\s|de la\s|des\s|sel\b|poivre\b)/i;
+  const NOISE = /(abonne|follow|lien en bio|link in bio|code promo|commente|identifie|tague?\s+(un|une|tes|ton|ta|quelqu)|n'?oublie pas|enregistre(?:-la| la| cette| ce)? ?(recette|post|video|reel)?\s*$|partage(?:-la| la| cette)? ?(recette|video|post|reel)|dis[- ]moi|en commentaire|like|sponsoris|partenariat|collab|#\w)/;
+
   function parseRecipeText(text) {
-    const all = String(text || '').split(/\r?\n/).map(l => l.trim());
-    const rows = all.filter(Boolean);
-    const recipe = { title: (rows[0] || '').replace(/^#+\s*/, '').slice(0, 120), ingredients: [], steps: [], notes: '' };
+    let raw = String(text || '').replace(/\r/g, '');
+    // Description écrite sur une seule ligne : on recrée les retours à la ligne.
+    if ((raw.match(/\n/g) || []).length < 3 && raw.length > 150) {
+      raw = raw
+        .replace(/\s+(?=(?:[\p{Extended_Pictographic}️‍]+\s*)?(?:ingr[ée]dients?|pr[ée]paration|[ée]tapes?|la recette|instructions?|astuces?|conseils?)\s*[:：(])/giu, '\n')
+        .replace(/\s+[•▪◦●·]\s*/g, '\n')
+        .replace(/\s+[-–]\s+/g, '\n- ')
+        .replace(/\s+(?=\d{1,2}\s*[.)]\s+\p{Lu})/gu, '\n')
+        .replace(/\s*(?=\d️?⃣)/g, '\n');
+    }
+    const recipe = { title: '', ingredients: [], steps: [], notes: '' };
+    const notes = [];
     let section = '';
-    const clean = l => l.replace(/^([-•*·–]|\d+[.)]|étape\s*\d+\s*[:.-]?)\s*/i, '').trim();
-    rows.slice(1).forEach(line => {
-      const bare = line.replace(/^#+\s*/, '').replace(/[:：]\s*$/, '');
-      if (/^ingr[ée]dients?\b/i.test(bare) && bare.length < 40) { section = 'ingredients'; return; }
-      if (/^(pr[ée]paration|[ée]tapes?|instructions?|m[ée]thode|d[ée]roul[ée]|recette)\b/i.test(bare) && bare.length < 40 && !/\d/.test(bare)) { section = 'steps'; return; }
-      const serv = line.match(/(?:pour|portions?\s*:?)\s*(\d+)\s*(?:pers|personnes|parts|portions)?/i);
-      if (serv && !recipe.servings && line.length < 60) { recipe.servings = serv[1]; if (!section) return; }
-      if (/^pr[ée]paration\s*:?\s*\d/i.test(line)) { recipe.prep = minutesIn(line); return; }
-      if (/^cuisson\s*:?\s*\d/i.test(line)) { recipe.cook = minutesIn(line); return; }
-      if (section === 'ingredients') recipe.ingredients.push(clean(line));
-      else if (section === 'steps') recipe.steps.push(clean(line));
-      else recipe.notes += (recipe.notes ? '\n' : '') + line;
+    let group = '';
+
+    const headingOf = h => {
+      const bare = normalize(h).replace(/[:：!.]+$/, '').replace(/\s*\(.*\)\s*$/, '').trim();
+      if (/^(les |mes )?(ingredients?|liste des courses|courses|il (vous|te|nous) faut|ce qu'?il (vous|te|nous) faut|ce dont (vous|tu) (avez|as) besoin)\b/.test(bare)) return 'ingredients';
+      if (/^(la |les )?(preparation|etapes?|instructions?|methode|deroule|realisation|recette|comment (faire|on (le |la |les )?fait|je (la |le |les )?(fais|prepare|realise))|procede|marche a suivre|c'?est parti|a vos fourneaux)\b/.test(bare) && !/\d+\s*(min|h\b|heure)/.test(bare)) return 'steps';
+      if (/^(mes |nos )?(astuces?|conseils?|tips?|notes?|remarques?|variantes?|bon a savoir|conservation|a savoir|suggestions?|pour accompagner|accompagnement)\b/.test(bare)) return 'notes';
+      return '';
+    };
+
+    String(raw).split('\n').forEach(original => {
+      const keycap = original.match(keycapNumber);
+      let line = decor(original.replace(keycapNumber, ''))
+        .replace(/(\s+[#@][\p{L}\p{N}_.]+)+\s*$/u, '').trim();
+      if (!line || /^([#@][\p{L}\p{N}_.]+\s*)+$/u.test(line)) return;
+      const n = normalize(line);
+
+      // Durées : « Préparation : 20 min » n'est pas un titre de section.
+      if (/^(temps de )?pr[ée]paration\s*:?\s*\d/i.test(n)) { recipe.prep = minutesIn(line); return; }
+      if (/^(temps de )?cuisson\s*:?\s*\d/i.test(n)) { recipe.cook = minutesIn(line); return; }
+      if (/^temps total\s*:?\s*\d/i.test(n)) return;
+      // Titres de section (le reste de la ligne, s'il y en a, appartient à la section).
+      const head = line.match(/^([^:：]{2,45})[:：]\s*(.*)$/) || [null, line, ''];
+      const kind = headingOf(head[1]) || (line.length < 45 ? headingOf(line) : '');
+      if (kind) {
+        section = kind;
+        group = '';
+        const time = minutesIn(line);
+        if (kind === 'steps' && time && /pr[ée]paration/i.test(head[1])) recipe.prep = recipe.prep || time;
+        const serv = line.match(/(\d+)\s*(pers|personnes|parts|portions)/i);
+        if (serv && !recipe.servings) recipe.servings = serv[1];
+        if (head[2] && head[1] !== line) {
+          head[2].split(/\s*[,;]\s+(?=\d|[½¼¾]|une?\s)|\s*[•·]\s*/).forEach(part => place(part, false));
+        }
+        return;
+      }
+      if (/^bon app[ée]tit/i.test(n) || (NOISE.test(n) && !quantityStart.test(line))) return;
+      // Autre titre (court, terminé par « : » ou une flèche) : la section en cours s'arrête là,
+      // la suite sera rangée d'après sa forme.
+      if (section && line.length <= 40 && !quantityStart.test(line) && !/^pour\s/i.test(line) && /([:：]|[⬇👇↓]️?)\s*$/u.test(original.trim())) {
+        section = '';
+        group = '';
+        return;
+      }
+
+      // Informations générales : portions, temps.
+      const serv = line.match(/^(?:pour|portions?\s*:?|quantit[ée]s? pour)\s*(\d+)\s*(pers|personnes|parts|portions|gourmands)?/i);
+      if (serv && line.length < 60) { recipe.servings = recipe.servings || serv[1]; return; }
+
+      if (!recipe.title && !section) {
+        const beforeEmoji = original.split(/[\p{Extended_Pictographic}]/u)[0].trim();
+        recipe.title = (beforeEmoji.length >= 4 ? decor(beforeEmoji) : line).replace(/[:：!,.\-–]+$/, '').trim().slice(0, 120);
+        return;
+      }
+      place(line, Boolean(keycap));
     });
-    recipe.ingredients = recipe.ingredients.filter(Boolean);
-    recipe.steps = recipe.steps.filter(Boolean);
+
+    // Range une ligne de contenu selon sa forme et la section en cours.
+    function place(line, numbered) {
+      const text = line.replace(bullet, '').trim();
+      if (!text) return;
+      const n = normalize(text);
+      const isNumbered = numbered || /^(\d{1,2}\s*[.)/:\-–]\s+\D|[ée]tape\s*\d+)/i.test(line);
+      const looksStep = isNumbered || STEP_VERBS.test(n) || text.length > 90 || /[.!]$/.test(text) && text.split(' ').length > 6;
+      const looksIngredient = !isNumbered && (quantityStart.test(text) || (text.length <= 60 && !STEP_VERBS.test(n) && !/[.!?]$/.test(text)));
+      // Sous-titre d'un groupe d'ingrédients : « Pour la pâte : ».
+      const groupMatch = text.match(/^pour (?:la |le |les |l'|l’)?(.{2,30}?)\s*[:：]?$/i);
+      if (groupMatch && !quantityStart.test(text.replace(/^pour\s+/i, '')) && (section === 'ingredients' || /[:：]$/.test(text))) {
+        section = 'ingredients';
+        group = groupMatch[1].trim();
+        return;
+      }
+      if (section === 'notes') { notes.push(text); return; }
+      if (section === 'ingredients' && !(looksStep && !quantityStart.test(text))) {
+        recipe.ingredients.push(group ? text + ' (' + group + ')' : text);
+        return;
+      }
+      if (section === 'steps' || looksStep) { section = section === 'notes' ? 'notes' : 'steps'; recipe.steps.push(text); return; }
+      if (looksIngredient) { recipe.ingredients.push(group ? text + ' (' + group + ')' : text); return; }
+      notes.push(text);
+    }
+
+    recipe.notes = notes.join('\n');
     return recipe;
   }
 
@@ -568,14 +668,16 @@ const Cuisine = (() => {
       servings: data.servings || '',
       prep: data.prep || '',
       cook: data.cook || '',
-      category: categoryFrom(data.category),
-      notes: ''
+      category: CATEGORIES.includes(data.category) ? data.category : categoryFrom(data.category),
+      notes: data.ai ? data.notes || '' : ''
     };
-    // Publication de réseau social : la recette est souvent dans la légende.
-    if (data.text && !recipe.ingredients.length && !recipe.steps.length) {
-      const parsed = parseRecipeText((recipe.title || '') + '\n' + data.text);
+    // Rangée par l'IA (publication de réseau social) : saison et repas sont proposés aussi.
+    const season = data.ai ? { seasons: data.seasons || [], meals: data.meals || [], allYear: Boolean(data.allYear) } : null;
+    // Sinon, la recette est souvent dans la légende : le navigateur la découpe lui-même.
+    if (!data.ai && data.text && !recipe.ingredients.length && !recipe.steps.length) {
+      const parsed = parseRecipeText(data.text);
       Object.assign(recipe, { title: recipe.title || parsed.title, ingredients: parsed.ingredients, steps: parsed.steps, servings: recipe.servings || parsed.servings || '',
-        prep: recipe.prep || parsed.prep || '', cook: recipe.cook || parsed.cook || '' });
+        prep: recipe.prep || parsed.prep || '', cook: recipe.cook || parsed.cook || '', notes: parsed.notes });
       if (!parsed.ingredients.length && !parsed.steps.length) recipe.notes = data.text;
     }
     let image = '';
@@ -585,7 +687,7 @@ const Cuisine = (() => {
         if (img.ok) image = await shrinkImage(await img.blob());
       } catch (e) { image = ''; }
     }
-    return { recipe, image, author: data.author || '', siteName: data.siteName || '', found: data.found || '' };
+    return { recipe, image, season, ai: Boolean(data.ai), aiError: data.aiError || '', author: data.author || '', siteName: data.siteName || '', found: data.found || '' };
   }
 
   // Remplit une recette en attente avec ce que le serveur a trouvé, sans écraser ce qui est déjà saisi.
@@ -598,14 +700,22 @@ const Cuisine = (() => {
     ['ingredients', 'steps'].forEach(k => { if (!r[k].length) r[k] = cleaned[k]; });
     ['servings', 'prep', 'cook'].forEach(k => { if (!r[k]) r[k] = cleaned[k]; });
     if (!r.notes && cleaned.notes) r.notes = cleaned.notes;
+    // Saison et repas proposés par l'IA, seulement s'ils n'ont pas encore été choisis.
+    if (got.season && !r.seasons.length && !p.allYear) {
+      r.seasons = SEASONS.filter(x => got.season.seasons.includes(x));
+      p.allYear = got.season.allYear || !r.seasons.length;
+    }
+    if (got.season && !r.meals.length) r.meals = Object.keys(MEALS).filter(m => got.season.meals.includes(m));
     if (!r.sourceAuthor && got.author) r.sourceAuthor = got.author;
     if (got.siteName) p.siteName = got.siteName;
     if (got.image && !p.hasImage && await images.put(pendingImageKey(p.id), got.image)) p.hasImage = true;
-    p.note = got.found === 'recette'
-      ? 'Recette récupérée automatiquement' + (got.siteName ? ' depuis ' + got.siteName : '') + ' : vérifie-la avant de valider.'
-      : got.found === 'texte'
-        ? 'Texte de la publication récupéré : vérifie que les ingrédients et les étapes sont bien rangés.'
-        : 'Le lien a été lu mais aucune recette n\'y a été trouvée : complète-la à la main.';
+    p.note = got.ai
+      ? 'Description de la publication rangée par l\'IA (ingrédients, étapes, notes, saison et repas) : vérifie-la avant de valider.'
+      : got.found === 'recette'
+        ? 'Recette récupérée automatiquement' + (got.siteName ? ' depuis ' + got.siteName : '') + ' : vérifie-la avant de valider.'
+        : got.found === 'texte'
+          ? 'Texte de la publication découpé automatiquement' + (got.aiError ? ' (IA indisponible : ' + got.aiError + ')' : '') + ' : vérifie que les ingrédients et les étapes sont bien rangés.'
+          : 'Le lien a été lu mais aucune recette n\'y a été trouvée : complète-la à la main.';
     p.fetched = true;
     return got.found;
   }
