@@ -1,7 +1,9 @@
-// /api/lire-photo — appelée par le Worker (server/worker.js).
-// GET  : indique si la lecture par l'IA est disponible (clé ANTHROPIC_API_KEY configurée).
-// POST { data, type } : envoie la photo (JPEG, PNG, WebP…) ou le PDF à Claude, qui en tire
+// Lecture de recettes par l'IA (Claude).
+// /api/lire-photo — appelée par le Worker (server/worker.js) :
+//   GET  : indique si la lecture par l'IA est disponible (clé ANTHROPIC_API_KEY configurée).
+//   POST { data, type } : envoie la photo (JPEG, PNG, WebP…) ou le PDF à Claude, qui en tire
 //   une recette complète : nom, catégorie, saisons, repas, portions, temps, ingrédients, étapes.
+// lireTexte() fait de même avec la description d'une publication (voir extraire.js).
 import Anthropic from '@anthropic-ai/sdk';
 
 const MODEL = 'claude-opus-5-5';
@@ -34,7 +36,7 @@ const SCHEMA = {
   }
 };
 
-const SYSTEM = `Tu lis des recettes de cuisine à partir de photos (livre, fiche, écran, carnet manuscrit) ou de documents, pour l'application « Mon App Cuisine ».
+const SYSTEM = `Tu lis des recettes de cuisine pour l'application « Mon App Cuisine », à partir de photos (livre, fiche, écran, carnet manuscrit), de documents, ou du texte de la description d'une publication de réseau social (Instagram, TikTok, Facebook…).
 
 Recopie fidèlement ce qui est écrit, en français :
 - titre : le nom de la recette.
@@ -47,6 +49,13 @@ Déduis aussi, car le document ne le dit généralement pas :
 - categorie : la catégorie qui convient le mieux.
 - saisons : les saisons où les ingrédients principaux sont de saison en France (ex. potiron → Automne et Hiver ; tomates fraîches, courgettes → Été). Si la recette convient toute l'année (ingrédients de garde ou disponibles toute l'année), mets toute_annee à true et saisons à [].
 - repas : « midi », « soir » ou les deux. Plat complet ou rapide à emporter → plutôt midi ; plat mijoté, soupe ou repas convivial → plutôt soir ; mets les deux quand la recette convient aux deux. Pour un dessert, une boisson ou un petit-déjeuner, mets les deux.
+
+Pour une description de publication, range chaque passage à sa place, même sans titres de section ou avec des titres décorés (« 🛒 INGRÉDIENTS 👇 », « Ce qu'il te faut », « La recette », « Étape 1 », listes à puces ou numérotées, tout sur une seule ligne) :
+- une liste d'aliments avec des quantités → ingredients ; une phrase qui dit quoi faire (couper, cuire, mélanger, enfourner…) → etapes, même si elle est numérotée ou suit directement les ingrédients ;
+- si les ingrédients sont regroupés (« Pour la pâte », « Pour la sauce »), garde le groupe entre parenthèses à la fin de chaque ingrédient (ex. « 200 g de farine (pâte) ») ;
+- les conseils, variantes, idées d'accompagnement, durée de conservation → notes ;
+- le titre est le nom du plat, sans émojis ni formule d'accroche (« La meilleure… de ta vie 😍 » → « Tarte à la butternut ») ;
+- écarte tout ce qui n'est pas la recette : hashtags, mentions (@…), invitations à s'abonner, liker, commenter, enregistrer ou partager, « lien en bio », codes promo, partenariats, émojis décoratifs.
 
 N'invente ni ingrédient ni étape. Si une partie est illisible, recopie ce qui est lisible et signale-le dans notes. Si le document ne contient pas de recette, mets lisible à false et explique pourquoi dans message.`;
 
@@ -77,19 +86,16 @@ export function toRecipe(r) {
   };
 }
 
-export async function onRequestPost({ request, env }) {
-  if (!env || !env.ANTHROPIC_API_KEY) {
-    return json({ error: 'La lecture par l\'IA n\'est pas configurée : ajoute la clé ANTHROPIC_API_KEY dans Cloudflare.' }, 503);
-  }
-  let body;
-  try { body = await request.json(); } catch (e) { return json({ error: 'Requête invalide.' }, 400); }
-  const type = String(body && body.type || '');
-  const data = String(body && body.data || '').replace(/^data:[^,]*,/, '');
-  const isPdf = type === 'application/pdf';
-  if (!isPdf && !IMAGE_TYPES.includes(type)) return json({ error: 'Format non pris en charge : envoie une photo (JPEG, PNG, WebP) ou un PDF.' }, 415);
-  if (!data || data.length * 0.75 > MAX_BYTES) return json({ error: 'Fichier vide ou trop lourd (10 Mo au maximum).' }, 413);
+// Erreur de lecture avec le code HTTP à renvoyer et un message lisible.
+class LectureError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
+}
 
-  const source = { type: 'base64', media_type: type, data };
+// Envoie le contenu (image, PDF ou texte) à Claude et renvoie la recette au format de l'application.
+async function lireRecette(env, content) {
+  if (!env || !env.ANTHROPIC_API_KEY) {
+    throw new LectureError(503, 'La lecture par l\'IA n\'est pas configurée : ajoute la clé ANTHROPIC_API_KEY dans Cloudflare.');
+  }
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   let response;
   try {
@@ -100,28 +106,56 @@ export async function onRequestPost({ request, env }) {
       fallbacks: 'default',
       output_config: { effort: 'medium', format: { type: 'json_schema', schema: SCHEMA } },
       system: SYSTEM,
-      messages: [{
-        role: 'user',
-        content: [
-          isPdf ? { type: 'document', source } : { type: 'image', source },
-          { type: 'text', text: 'Lis cette recette et remplis tous les champs.' }
-        ]
-      }]
+      messages: [{ role: 'user', content }]
     });
   } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) return json({ error: 'La clé ANTHROPIC_API_KEY est refusée : vérifie-la dans Cloudflare.' }, 502);
-    if (e instanceof Anthropic.RateLimitError) return json({ error: 'Trop de lectures en même temps : réessaie dans une minute.' }, 429);
-    if (e instanceof Anthropic.BadRequestError) return json({ error: 'L\'IA n\'a pas pu ouvrir ce fichier : ' + e.message }, 400);
-    if (e instanceof Anthropic.APIConnectionError) return json({ error: 'Impossible de joindre le service d\'IA : réessaie.' }, 502);
-    if (e instanceof Anthropic.APIError) return json({ error: 'Le service d\'IA a répondu avec une erreur (' + e.status + ').' }, 502);
+    if (e instanceof Anthropic.AuthenticationError) throw new LectureError(502, 'La clé ANTHROPIC_API_KEY est refusée : vérifie-la dans Cloudflare.');
+    if (e instanceof Anthropic.RateLimitError) throw new LectureError(429, 'Trop de lectures en même temps : réessaie dans une minute.');
+    if (e instanceof Anthropic.BadRequestError) throw new LectureError(400, 'L\'IA n\'a pas pu ouvrir ce contenu : ' + e.message);
+    if (e instanceof Anthropic.APIConnectionError) throw new LectureError(502, 'Impossible de joindre le service d\'IA : réessaie.');
+    if (e instanceof Anthropic.APIError) throw new LectureError(502, 'Le service d\'IA a répondu avec une erreur (' + e.status + ').');
     throw e;
   }
-
-  if (response.stop_reason === 'refusal') return json({ error: 'L\'IA a refusé de lire ce document.' }, 422);
-  if (response.stop_reason === 'max_tokens') return json({ error: 'La recette est trop longue pour être lue en une fois.' }, 422);
+  if (response.stop_reason === 'refusal') throw new LectureError(422, 'L\'IA a refusé de lire ce contenu.');
+  if (response.stop_reason === 'max_tokens') throw new LectureError(422, 'La recette est trop longue pour être lue en une fois.');
   const text = response.content.filter(b => b.type === 'text').map(b => b.text).join('');
   let parsed;
-  try { parsed = JSON.parse(text); } catch (e) { return json({ error: 'La réponse de l\'IA est incomplète : réessaie.' }, 502); }
-  if (!parsed.lisible) return json({ error: parsed.message || 'Aucune recette trouvée sur ce document.' }, 422);
-  return json({ recipe: toRecipe(parsed) });
+  try { parsed = JSON.parse(text); } catch (e) { throw new LectureError(502, 'La réponse de l\'IA est incomplète : réessaie.'); }
+  if (!parsed.lisible) throw new LectureError(422, parsed.message || 'Aucune recette trouvée dans ce contenu.');
+  return toRecipe(parsed);
+}
+
+export const lectureDisponible = env => Boolean(env && env.ANTHROPIC_API_KEY);
+
+// Range le texte d'une publication (légende, description) en recette.
+// contexte : { site, auteur, titre } pour aider l'IA ; lève une LectureError en cas d'échec.
+export function lireTexte(env, texte, contexte = {}) {
+  const entete = [
+    'Voici la description d\'une publication' + (contexte.site ? ' ' + contexte.site : '') + (contexte.auteur ? ' de ' + contexte.auteur : '') + '.',
+    contexte.titre ? 'Titre de la page : ' + contexte.titre : '',
+    'Range cette recette et remplis tous les champs.'
+  ].filter(Boolean).join('\n');
+  return lireRecette(env, [{ type: 'text', text: entete + '\n\n<description>\n' + String(texte).slice(0, 20000) + '\n</description>' }]);
+}
+
+export async function onRequestPost({ request, env }) {
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: 'Requête invalide.' }, 400); }
+  const type = String(body && body.type || '');
+  const data = String(body && body.data || '').replace(/^data:[^,]*,/, '');
+  const isPdf = type === 'application/pdf';
+  if (!lectureDisponible(env)) return json({ error: 'La lecture par l\'IA n\'est pas configurée : ajoute la clé ANTHROPIC_API_KEY dans Cloudflare.' }, 503);
+  if (!isPdf && !IMAGE_TYPES.includes(type)) return json({ error: 'Format non pris en charge : envoie une photo (JPEG, PNG, WebP) ou un PDF.' }, 415);
+  if (!data || data.length * 0.75 > MAX_BYTES) return json({ error: 'Fichier vide ou trop lourd (10 Mo au maximum).' }, 413);
+  const source = { type: 'base64', media_type: type, data };
+  try {
+    const recipe = await lireRecette(env, [
+      isPdf ? { type: 'document', source } : { type: 'image', source },
+      { type: 'text', text: 'Lis cette recette et remplis tous les champs.' }
+    ]);
+    return json({ recipe });
+  } catch (e) {
+    if (e instanceof LectureError) return json({ error: e.message }, e.status);
+    throw e;
+  }
 }
